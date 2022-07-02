@@ -3,6 +3,20 @@ uuid = "a60c9cbd-e72f-4185-96b6-b8fc312c4d37"
 authors = ["Brendan C. Lyons <bclyons12@gmail.com> and contributors"]
 version = "0.1.0"
 
+[deps]
+BandedMatrices = "aae01518-5342-5314-be14-df237901396f"
+Equilibrium = "187daef3-cca3-527a-8725-7379bc760182"
+FiniteElementHermite = "6ce10167-d368-4c0e-af34-9787cdd175e5"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+MillerExtendedHarmonic = "c82744c2-dc08-461a-8c37-87ab04d0f9b8"
+NLsolve = "2774e3e8-f4cf-5e23-947b-6d7e65073b56"
+Optim = "429524aa-4258-5aef-a3af-852621145aeb"
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+QuadGK = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
+Trapz = "592b5752-818d-11e9-1e9a-2b8ca4a44cd1"
+
 [compat]
 julia = "1"
 

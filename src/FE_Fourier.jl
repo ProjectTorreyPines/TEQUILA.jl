@@ -15,17 +15,12 @@ function fourier_decompose(f, M::Integer)
     Sc = -imag.(Fy) / (M + 2)  # fft sign convention
     Cc[1] = 0.5 * Cc[1]
     Sc[1] = 0.0
-    return Cc, Sc
+    return collect(Iterators.flatten(zip(Cc, Sc)))
 end
 
-# Not sure we'll need this
-# Probably just fourier_decompose ρ inner products
-function inner_product(f, nu, k, ρ, mu, m)
-    Ix(θ) = mu(m*θ) * inner_product(x -> f(x,θ), nu, k, ρ)
-    return @trapz range(0, 2π, 4m+1) θ Ix(θ)
-end
+# At fixed θ, give inner product of f(x,θ) and the basis nu(x,k,ρ)
+ρIP_f_nu(θ, f, nu, k, ρ) = inner_product(x -> f(x,θ), nu, k, ρ)
 
-#function inner_product(f, nu, k, ρ, mu, m, N)
-#    Iθ(x) = @trapz range(0, 2π, 4m+1) θ f(x,θ) * mu(m*θ)
-#    return @trapz range(0, 2π, 2N+1) θ Ix(θ)
-#end
+# Fourier decomposition (all m values) of ρIP_f_nu
+# Doing this for all k and nu will give 2D decomposition of f in to FEs for ρ and Fourier for θ
+θFD_ρIP_f_nu(f, nu, k, ρ, M) = fourier_decompose(θ -> ρIP_f_nu(θ, f, nu, k, ρ), M)

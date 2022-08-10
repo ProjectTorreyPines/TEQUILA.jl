@@ -18,9 +18,10 @@ include("initialize.jl")
 export Ψmiller
 
 include("shot.jl")
-export Shot, plot_shot
+export Shot, psi_ρθ, plot_shot
 
 include("FE_Fourier.jl")
+export θFD_ρIP_f_nu
 
 include("surfaces.jl")
 export concentric_surface, surfaces_FE, R_Z, ρ_θ

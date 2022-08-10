@@ -7,6 +7,7 @@ import NLsolve
 using Plots
 import QuadGK: quadgk
 import FFTW: fft
+using LinearAlgebra
 #using Trapz
 #using BandedMatrices
 #import ForwardDiff
@@ -14,10 +15,10 @@ import FFTW: fft
 const μ₀ = 4e-7*π
 
 include("initialize.jl")
-export Ψmiller, first_shot
+export Ψmiller
 
 include("shot.jl")
-export TEQUILAshot, plot_shot
+export Shot, plot_shot
 
 include("FE_Fourier.jl")
 

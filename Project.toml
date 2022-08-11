@@ -21,6 +21,7 @@ ScatteredInterpolation = "3f865c0f-6dca-5f4d-999b-29fe1e7e3c92"
 Trapz = "592b5752-818d-11e9-1e9a-2b8ca4a44cd1"
 
 [compat]
+BasisFunctionExpansions = "1"
 julia = "1"
 
 [extras]

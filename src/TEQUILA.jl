@@ -8,6 +8,7 @@ using Plots
 import QuadGK: quadgk
 import FFTW: fft
 using LinearAlgebra
+using StaticArrays
 #using Trapz
 #using BandedMatrices
 #import ForwardDiff

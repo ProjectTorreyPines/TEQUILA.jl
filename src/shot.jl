@@ -1,4 +1,4 @@
-mutable struct Shot{T<:Integer, S<:AbstractVector{<:Real}, R<:AbstractVector{<:MXH}, Q<:AbstractMatrix{<:Real}} # <: AbstractEquilibrium (eventually)
+mutable struct Shot{T<:Integer, S<:AbstractVector{<:Real}, R<:AbstractMatrix{<:Real}, Q<:AbstractMatrix{<:Real}} # <: AbstractEquilibrium (eventually)
     N :: T
     M :: T
     ρ :: S
@@ -19,6 +19,17 @@ end
 
 function Shot(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, surfaces :: AbstractVector{<:MXH}, Ψ;
               zero_boundary=false)
+    @assert length(surfaces) == N
+    L = length(surfaces[1].c)
+    S = zeros(5+2L, N)
+    for (k, mxh) in enumerate(surfaces)
+       @views flat_coeffs!(S[:, k], mxh)
+    end
+    Shot(N, M, ρ, S, Ψ; zero_boundary)
+end
+
+function Shot(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, surfaces :: AbstractMatrix{<:Real}, Ψ;
+    zero_boundary=false)
 
     S_FE = surfaces_FE(ρ, surfaces)
 
@@ -36,7 +47,11 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ; zero_boundary=fal
 
     ρ = range(0, 1, N)
 
-    surfaces = concentric_surface.(ρ, Ref(boundary))
+    L = length(boundary.c)
+    surfaces = zeros(5 + 2L, N)
+    for k in eachindex(ρ)
+        @views flat_coeffs!(surfaces[:, k], concentric_surface(ρ[k], boundary))
+    end
 
     function Ψ_ρθ(ρ, θ)
         (zero_boundary && ρ == 1.0) && return 0.0
@@ -50,11 +65,17 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ; zero_boundary=fal
 end
 
 function psi_ρθ(shot::Shot, ρ, θ)
-    return sum(shot.C[2i-1,2m+1] * νo(ρ,i,shot.ρ) * cos(m*θ) +
-               shot.C[2i  ,2m+1] * νe(ρ,i,shot.ρ) * cos(m*θ) +
-               shot.C[2i-1,2m+2] * νo(ρ,i,shot.ρ) * sin(m*θ) +
-               shot.C[2i  ,2m+2] * νe(ρ,i,shot.ρ) * sin(m*θ)
-               for i in 1:shot.N, m in 0:shot.M)
+    psi = 0.0
+    for i in 1:shot.N
+        nuo = νo(ρ,i,shot.ρ)
+        nue = νe(ρ,i,shot.ρ)
+        for m in 0:shot.M
+            sm, cm = sincos(m*θ)
+            psi += ((shot.C[2i-1,2m+1] * nuo + shot.C[2i  ,2m+1] * nue) * cm +
+                    (shot.C[2i-1,2m+2] * nuo + shot.C[2i  ,2m+2] * nue) * sm)
+        end
+    end
+    return psi
 end
 
 function plot_shot(shot::Shot, axes=:rz; points=101)
@@ -69,13 +90,17 @@ function plot_shot(shot::Shot, axes=:rz; points=101)
        plot!(p, xlabel="θ", ylabel="ρ")
     elseif axes == :rz
 
-        boundary = shot.surfaces[end]
-        a = boundary.R0 * boundary.ϵ
-        Rmin = boundary.R0 - a
-        Rmax = boundary.R0 + a
+        @views bnd = shot.surfaces[:, end]
+        R0 = bnd[1]
+        Z0 = bnd[2]
+        ϵ = bnd[3]
+        κ = bnd[4]
+        a = R0 * ϵ
+        Rmin = R0 - a
+        Rmax = R0 + a
 
-        Zmin = boundary.Z0 - a * boundary.κ
-        Zmax = boundary.Z0 + a * boundary.κ
+        Zmin = Z0 - a * κ
+        Zmax = Z0 + a * κ
         
         xs = range(Rmin, Rmax, points)
         ys = range(Zmin, Zmax, points)
@@ -94,17 +119,6 @@ function plot_shot(shot::Shot, axes=:rz; points=101)
             end
         end
         heatmap!(p, xs, ys, G, aspect_ratio=:equal, clim=(0,1))
-    elseif :sunflower
-        N = points^2
-        ys = 2π * 0:(N-1) / MathConstants.golden^2
-        xs = sqrt.(range(0,1,N))
-        G = g.(zip(xs, ys)...)
-        p = nothing
     end
     return p
 end
-
-#function (S::Shot)(R, Z)
-
-
-

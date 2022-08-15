@@ -48,15 +48,40 @@ function surfaces_FE(ρ:: AbstractVector{<:Real}, surfaces:: AbstractVector{<:MX
     return R0, Z0, ϵ, κ, c0, c, s
 end
 
-function R_Z(R0::FE_rep, Z0::FE_rep, ϵ::FE_rep, κ::FE_rep, c0::FE_rep,
-             c::AbstractVector{<:FE_rep}, s::AbstractVector{<:FE_rep}, x::Real, t::Real)
-    cx = [cm(x) for cm in c]
-    sx = [sm(x) for sm in s]
-    surface = MXH(R0(x), Z0(x), ϵ(x), κ(x), c0(x), cx, sx)
-    return surface(t)
+function surfaces_FE(ρ:: AbstractVector{<:Real}, surfaces:: AbstractMatrix{<:Real} )
+
+    rtype = typeof(ρ[1])
+
+    @views R0 = FE(ρ, rtype.(surfaces[1, :]))
+    @views Z0 = FE(ρ, rtype.(surfaces[2, :]))
+    @views ϵ  = FE(ρ, rtype.(surfaces[3, :]))
+    @views κ  = FE(ρ, rtype.(surfaces[4, :]))
+    @views c0 = FE(ρ, rtype.(surfaces[5, :]))
+
+    M = (size(surfaces,1) - 5) ÷ 2
+    @views c  = [FE(ρ, rtype.(surfaces[5 + m, :])) for m in 1:M]
+    @views s  = [FE(ρ, rtype.(surfaces[5 + m + M, :])) for m in 1:M]
+
+    return R0, Z0, ϵ, κ, c0, c, s
 end
 
 R_Z(shot::Shot, x::Real, t::Real) = R_Z(surfaces_FE(shot)..., x, t)
+
+function R_Z(R0::FE_rep, Z0::FE_rep, ϵ::FE_rep, κ::FE_rep, c0::FE_rep,
+             c::AbstractVector{<:FE_rep}, s::AbstractVector{<:FE_rep}, x::Real, t::Real)
+    R0x = R0(x)
+    Z0x = Z0(x)
+    ϵx  = ϵ(x)
+    κx  = κ(x)
+    c0x = c0(x)
+    cx = [cm(x) for cm in c]
+    sx = [sm(x) for sm in s]
+    a = R0x * ϵx
+
+    R = R_MXH(t, R0x, ϵx, c0x, cx, sx, a)
+    Z = Z_MXH(t, R0x, Z0x, ϵx, κx, a)
+    return R, Z
+end
 
 function ρ_θ(R0::FE_rep, Z0::FE_rep, ϵ::FE_rep, κ::FE_rep, c0::FE_rep,
              c::AbstractVector{<:FE_rep}, s::AbstractVector{<:FE_rep}, R::Real, Z::Real)

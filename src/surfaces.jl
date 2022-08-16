@@ -22,7 +22,7 @@ function surfaces_FE(ρ:: AbstractVector{<:Real}, surfaces:: AbstractVector{<:MX
     ϵs  = zeros(N)
     κs  = zeros(N)
     c0s = zeros(N)
-    cs  = zeros(N, M_mxh)
+    Cs  = zeros(N, M_mxh)
     ss  = zeros(N, M_mxh)
 
     for (i, surface) in enumerate(surfaces)
@@ -83,54 +83,141 @@ function R_Z(R0::FE_rep, Z0::FE_rep, ϵ::FE_rep, κ::FE_rep, c0::FE_rep,
     return R, Z
 end
 
-function ρ_θ(R0::FE_rep, Z0::FE_rep, ϵ::FE_rep, κ::FE_rep, c0::FE_rep,
-             c::AbstractVector{<:FE_rep}, s::AbstractVector{<:FE_rep}, R::Real, Z::Real)
-    a = R0(1) * ϵ(1)
-    function Δ!(F, x)
-        ρ = 0.5*(tanh(x[1]) + 1.0)
-        θ = π*(tanh(x[2]) + 1.0)
-        X, Y = R_Z(R0, Z0, ϵ, κ, c0, c, s, ρ, θ)
-        F[1] = X - R
-        F[2] = Y - Z
+outside(S::Union{MXH, AbstractVector{<:Real}}, x) = !in_surface(x[1], x[2], S);
+
+function surface_bracket(shot::Shot, R::Real, Z::Real)
+
+    x = SVector(R, Z)
+
+    _, Ncol = size(shot.surfaces)
+
+    get_col(k::Integer) = @views shot.surfaces[:, k]
+    get_col(x::SVector{2,<:Real}) = x
+
+    ko = searchsortedfirst(1:Ncol, x, by=get_col, lt=outside)
+
+    ko == 1 && return 1, shot.ρ[1], 0.0, 1, shot.ρ[1], 0.0
+
+    if ko > shot.N
+        ρ = shot.ρ[end]
+        @views θ = nearest_angle(R, Z, shot.surfaces[:, end])
+        return shot.N, ρ, θ, shot.N, ρ, θ
     end
-    # function j!(J, x)
-    #     println("J: ", x)
-    #     println((R0(x[1]), Z0(x[1]), ϵ(x[1]), κ(x[1]), c0(x[1])))
-    #     J[1,1] = dR_dρ(x[1], x[2], R0, ϵ, c0, c, s)
-    #     J[2,1] = dR_dθ(x[1], x[2], R0, ϵ, c0, c, s)
-    #     J[1,2] = dZ_dρ(x[1], x[2], R0, Z0, ϵ, κ)
-    #     J[2,2] = dZ_dθ(x[1], x[2], R0, ϵ, κ)
-    #     println(J)
-    #     println()
-    # end
-    x1_0 = min(sqrt(((R-R0(1))/a)^2 + ((Z-Z0(1))/(κ(1)*a))^2), 0.99)
-    x1_0 = atanh(2 * x1_0 - 1.0)
-    x2_0 = atan(Z-Z0(1), R-R0(1))
-    x2_0 < 0 && (x2_0 += 2π)
-    x2_0 = atanh(x2_0 / π - 1.0)
-    S =  NLsolve.nlsolve(Δ!, [x1_0, x2_0])#, autodiff=:forward)#, method=:newton)
-    if NLsolve.converged(S)
-        return 0.5 * (tanh(S.zero[1]) + 1.0), π * (tanh(S.zero[2]) + 1.0)
+
+    ρo = shot.ρ[ko]
+    @views So = shot.surfaces[:, ko]
+    θo = nearest_angle(R, Z, So)
+    Ro = R_MXH(θo, So)
+    Zo = Z_MXH(θo, So)
+    (R==Ro && Z==Zo) && return ko, ρo, θo, ko, ρo, θo
+
+    ki = ko - 1
+    ρi = shot.ρ[ki]
+    @views θi = nearest_angle(R, Z, shot.surfaces[:, ki])
+    return ki, ρi, θi, ko, ρo, θo
+end
+
+function res_find_ρ(ρ::Real, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep,
+                    cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep}, R::Real, Z::Real; return_θ=false)
+
+    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(R0fe.x, ρ)
+    R0 = evaluate_inbounds(R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    Z0 = evaluate_inbounds(Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵ = evaluate_inbounds(ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κ = evaluate_inbounds(κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+
+    a = R0 * ϵ
+    b = κ * a
+
+    dZ = (Z0 - Z)
+    aa = dZ / b
+    θo = asin(aa)
+    signθ = θo < 0.0 ? -1.0 : 1.0
+    θi = signθ * π - θo
+
+    c0 = evaluate_inbounds(c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+
+    θro = θo + c0
+    θri = θi + c0
+    @inbounds for m in eachindex(cfe)
+        S = evaluate_inbounds(sfe[m], k, nu_ou, nu_eu, nu_ol, nu_el)
+        C = evaluate_inbounds(cfe[m], k, nu_ou, nu_eu, nu_ol, nu_el)
+        θro += dot((S, C), sincos(m * θo))
+        θri += dot((S, C), sincos(m * θi))
+    end
+    dR = R0 - R
+    reso =  (dR + a * cos(θro))^2
+    resi =  (dR + a * cos(θri))^2
+    if reso < resi
+        return_θ ? (return θo) : (return reso)
     else
-        return [NaN, NaN]
+        return_θ ? (return θi) : (return resi)
     end
 end
 
-ρ_θ(shot::Shot, R::Real, Z::Real) = ρ_θ(surfaces_FE(shot)..., R, Z)
+function res_zext(ρ::Real, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, Z::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(R0fe.x, ρ)
+    R0 = evaluate_inbounds(R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    Z0 = evaluate_inbounds(Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵ = evaluate_inbounds(ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κ = evaluate_inbounds(κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    b = R0 * ϵ * κ
+    return (Z0 + sign(Z-Z0) * b - Z)^2
+end
+
+
+function ρθ_RZ(shot::Shot, R::Real, Z::Real, R0::FE_rep, Z0::FE_rep, ϵ::FE_rep, κ::FE_rep, c0::FE_rep,
+               c::AbstractVector{<:FE_rep}, s::AbstractVector{<:FE_rep})
+
+    ki, ρi, θi, ko, ρo, θo = surface_bracket(shot, R, Z)
+    ki==ko && return ρo, θo # on a surface exactly
+
+    if abs(θi) == 0.5 * π
+        # find ρ where Z = Zext
+        f_zext(x) = res_zext(x, R0, Z0, ϵ, κ, Z)
+        ρi = optimize(f_zext, ρi, ρo).minimizer
+    end
+
+    f_find_ρ(x) = res_find_ρ(x, R0, Z0, ϵ, κ, c0, c, s, R, Z)
+
+    ρ = optimize(f_find_ρ, ρi, ρo).minimizer
+
+    θ = res_find_ρ(ρ, R0, Z0, ϵ, κ, c0, c, s, R, Z, return_θ=true)
+
+    return ρ, θ
+end
 
 Tr(ρ, θ, R0, Z0, ϵ, κ, c0, c, s) = Tr(ρ, θ, c0, c, s)
 function Tr(ρ::Real, θ::Real, c0::FE_rep, c::AbstractVector{<:FE_rep}, s::AbstractVector{<:FE_rep})
-    return θ + c0(ρ) + sum(dot((s[m](ρ), c[m](ρ)), sincos(m * θ)) for m in eachindex(c))
+    θr = θ + c0(ρ)
+    @inbounds for m in eachindex(c)
+        S = s[m](ρ)
+        C = c[m](ρ)
+        θr += dot((S, C), sincos(m * θ))
+    end
+    return θr
 end
 
 dTr_dρ(ρ, θ, R0, Z0, ϵ, κ, c0, c, s) = dTr_dρ(ρ, θ, c0, c, s)
 function dTr_dρ(ρ::Real, θ::Real, c0::FE_rep, c::AbstractVector{<:FE_rep}, s::AbstractVector{<:FE_rep})
-    return D(c0, ρ) + sum(dot((D(s[m], ρ), D(c[m], ρ)), sincos(m * θ)) for m in eachindex(c))
+    dθr_dρ = D(c0, ρ)
+    @inbounds for m in eachindex(c)
+        dS = D(s[m], ρ)
+        dC = D(c[m], ρ)
+        dθr_dρ += dot((dS, dC), sincos(m * θ))
+    end
+    return dθr_dρ
 end
 
 dTr_dθ(ρ, θ, R0, Z0, ϵ, κ, c0, c, s) = dTr_dθ(ρ, θ, c, s)
 function dTr_dθ(ρ::Real, θ::Real, c::AbstractVector{<:FE_rep}, s::AbstractVector{<:FE_rep})
-    return 1.0 + sum(dot((-c[m](ρ), s[m](ρ)), sincos(m * θ)) for m in eachindex(c))
+    dθr_dθ = 1.0
+    @inbounds for m in eachindex(c)
+        S = s[m](ρ)
+        C = c[m](ρ)
+        dθr_dθ += dot((-C, S), sincos(m * θ))
+    end
+    return dθr_dθ
 end
 
 dR_dρ(ρ, θ, R0, Z0, ϵ, κ, c0, c, s) = dR_dρ(ρ, θ, R0, ϵ, c0, c, s)

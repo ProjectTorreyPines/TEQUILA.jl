@@ -66,13 +66,19 @@ end
 
 function psi_ρθ(shot::Shot, ρ, θ)
     psi = 0.0
-    for i in 1:shot.N
-        nuo = νo(ρ,i,shot.ρ)
-        nue = νe(ρ,i,shot.ρ)
+    scmt = [sincos(m * θ) for m in 0:shot.M]
+    for i in eachindex(shot.ρ)
+        nuo = νo(ρ, i, shot.ρ)
+        nue = νe(ρ, i, shot.ρ)
         for m in 0:shot.M
-            sm, cm = sincos(m*θ)
-            psi += ((shot.C[2i-1,2m+1] * nuo + shot.C[2i  ,2m+1] * nue) * cm +
-                    (shot.C[2i-1,2m+2] * nuo + shot.C[2i  ,2m+2] * nue) * sm)
+            @inbounds C  = shot.C[2i-1, 2m+1] * nuo
+            @inbounds C += shot.C[2i  ,2m+1] * nue
+            @inbounds S  = shot.C[2i-1, 2m+2] * nuo
+            @inbounds S += shot.C[2i  ,2m+2] * nue
+            @inbounds sm, cm = scmt[m+1]
+            psi += S * sm
+            psi += C * cm
+            #@inbounds psi += dot((S, C), scmt[m+1])
         end
     end
     return psi

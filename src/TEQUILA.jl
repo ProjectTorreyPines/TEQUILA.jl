@@ -5,13 +5,10 @@ using FiniteElementHermite
 using MillerExtendedHarmonic
 import NLsolve
 using Plots
-import QuadGK: quadgk
 import FFTW: fft
 using LinearAlgebra
 using StaticArrays
-#using Trapz
-#using BandedMatrices
-#import ForwardDiff
+using Optim
 
 const μ₀ = 4e-7*π
 
@@ -25,6 +22,6 @@ include("FE_Fourier.jl")
 export θFD_ρIP_f_nu
 
 include("surfaces.jl")
-export concentric_surface, surfaces_FE, R_Z, ρ_θ
+export concentric_surface, surfaces_FE, R_Z, ρθ_RZ
 
 end

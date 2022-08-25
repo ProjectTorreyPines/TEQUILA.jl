@@ -3,11 +3,23 @@ function concentric_surface(x::Real, boundary::MXH)
     # these go to zero as you go to axis
     surface.ϵ *= x
     if x < 1.0
-        surface.c *= x
-        surface.s *= x
+        surface.c .*= x
+        surface.s .*= x
     end
     return surface
 end
+
+function concentric_surface!(surface::MXH, x::Real, boundary::MXH)
+    copy_MXH!(surface, boundary)
+    # these go to zero as you go to axis
+    surface.ϵ *= x
+    if x < 1.0
+        surface.c .*= x
+        surface.s .*= x
+    end
+    return surface
+end
+
 
 function surfaces_FE(shot::Shot)
     surfaces_FE(shot.ρ, shot.surfaces)
@@ -22,7 +34,7 @@ function surfaces_FE(ρ:: AbstractVector{<:Real}, surfaces:: AbstractVector{<:MX
     ϵs  = zeros(N)
     κs  = zeros(N)
     c0s = zeros(N)
-    Cs  = zeros(N, M_mxh)
+    cs  = zeros(N, M_mxh)
     ss  = zeros(N, M_mxh)
 
     for (i, surface) in enumerate(surfaces)
@@ -37,49 +49,70 @@ function surfaces_FE(ρ:: AbstractVector{<:Real}, surfaces:: AbstractVector{<:MX
 
     rtype = typeof(ρ[1])
 
-    R0 = FE(ρ, rtype.(R0s))
-    Z0 = FE(ρ, rtype.(Z0s))
-    ϵ = FE(ρ, rtype.(ϵs))
-    κ = FE(ρ, rtype.(κs))
-    c0 = FE(ρ, rtype.(c0s))
-    c = [FE(ρ, rtype.(cs[:, m])) for m in 1:M_mxh]
-    s = [FE(ρ, rtype.(ss[:, m])) for m in 1:M_mxh]
+    R0fe = FE(ρ, rtype.(R0s))
+    Z0fe = FE(ρ, rtype.(Z0s))
+    ϵfe = FE(ρ, rtype.(ϵs))
+    κfe = FE(ρ, rtype.(κs))
+    c0fe = FE(ρ, rtype.(c0s))
 
-    return R0, Z0, ϵ, κ, c0, c, s
+    cfe = Vector{typeof(R0fe)}(undef, M_mxh)
+    sfe = Vector{typeof(R0fe)}(undef, M_mxh)
+    for m in 1:M_mxh
+        @views cfe[m] = FE(ρ, rtype.(cs[:, m]))
+        @views sfe[m] = FE(ρ, rtype.(ss[:, m]))
+    end
+
+    return R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe
 end
 
 function surfaces_FE(ρ:: AbstractVector{<:Real}, surfaces:: AbstractMatrix{<:Real} )
 
     rtype = typeof(ρ[1])
 
-    @views R0 = FE(ρ, rtype.(surfaces[1, :]))
-    @views Z0 = FE(ρ, rtype.(surfaces[2, :]))
-    @views ϵ  = FE(ρ, rtype.(surfaces[3, :]))
-    @views κ  = FE(ρ, rtype.(surfaces[4, :]))
-    @views c0 = FE(ρ, rtype.(surfaces[5, :]))
+    @views R0fe = FE(ρ, rtype.(surfaces[1, :]))
+    @views Z0fe = FE(ρ, rtype.(surfaces[2, :]))
+    @views ϵfe  = FE(ρ, rtype.(surfaces[3, :]))
+    @views κfe  = FE(ρ, rtype.(surfaces[4, :]))
+    @views c0fe = FE(ρ, rtype.(surfaces[5, :]))
 
     M = (size(surfaces,1) - 5) ÷ 2
-    @views c  = [FE(ρ, rtype.(surfaces[5 + m, :])) for m in 1:M]
-    @views s  = [FE(ρ, rtype.(surfaces[5 + m + M, :])) for m in 1:M]
 
-    return R0, Z0, ϵ, κ, c0, c, s
+    cfe = Vector{typeof(R0fe)}(undef, M)
+    sfe = Vector{typeof(R0fe)}(undef, M)
+    for m in 1:M
+        @views cfe[m] = FE(ρ, rtype.(surfaces[5 + m, :]))
+        @views sfe[m] = FE(ρ, rtype.(surfaces[5 + m + M, :]))
+    end
+
+    return R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe
 end
 
-R_Z(shot::Shot, x::Real, t::Real) = R_Z(surfaces_FE(shot)..., x, t)
+function R_Z(shot::Shot, x::Real, t::Real)
+    return R_Z(shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe, shot.cfe, shot.sfe, x, t)
+end
 
-function R_Z(R0::FE_rep, Z0::FE_rep, ϵ::FE_rep, κ::FE_rep, c0::FE_rep,
-             c::AbstractVector{<:FE_rep}, s::AbstractVector{<:FE_rep}, x::Real, t::Real)
-    R0x = R0(x)
-    Z0x = Z0(x)
-    ϵx  = ϵ(x)
-    κx  = κ(x)
-    c0x = c0(x)
-    cx = [cm(x) for cm in c]
-    sx = [sm(x) for sm in s]
-    a = R0x * ϵx
+function R_Z(R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep,
+             cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep}, x::Real, t::Real)
 
-    R = R_MXH(t, R0x, ϵx, c0x, cx, sx, a)
-    Z = Z_MXH(t, R0x, Z0x, ϵx, κx, a)
+    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(R0fe.x, x)
+    R0x = evaluate_inbounds(R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    Z0x = evaluate_inbounds(Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+
+    ax = R0x * ϵx
+
+    csx = 0.0
+    @inbounds for m in eachindex(cfe)
+        smx = evaluate_inbounds(sfe[m], k, nu_ou, nu_eu, nu_ol, nu_el)
+        cmx = evaluate_inbounds(cfe[m], k, nu_ou, nu_eu, nu_ol, nu_el)
+        csx += dot((smx, cmx), sincos(m * t))
+    end
+
+    tr = t + c0x + csx
+    R = R0x + ax * cos(tr)
+    Z = Z0x - κx * ax * sin(t)
     return R, Z
 end
 
@@ -117,6 +150,19 @@ function surface_bracket(shot::Shot, R::Real, Z::Real)
     return ki, ρi, θi, ko, ρo, θo
 end
 
+function θr_oi(θo, θi, c0, cfe, sfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+
+    θro = θo + c0
+    θri = θi + c0
+    @inbounds for m in eachindex(cfe)
+        C = evaluate_inbounds(cfe[m], k, nu_ou, nu_eu, nu_ol, nu_el)
+        S = evaluate_inbounds(sfe[m], k, nu_ou, nu_eu, nu_ol, nu_el)
+        θro += dot((S, C), sincos(m * θo))
+        θri += dot((S, C), sincos(m * θi))
+    end
+    return θro, θri
+end
+
 function res_find_ρ(ρ::Real, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep,
                     cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep}, R::Real, Z::Real; return_θ=false)
 
@@ -131,28 +177,25 @@ function res_find_ρ(ρ::Real, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::F
 
     dZ = (Z0 - Z)
     aa = dZ / b
+    aa = min(1.0, max(-1.0, aa))
     θo = asin(aa)
     signθ = θo < 0.0 ? -1.0 : 1.0
     θi = signθ * π - θo
 
     c0 = evaluate_inbounds(c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
 
-    θro = θo + c0
-    θri = θi + c0
-    @inbounds for m in eachindex(cfe)
-        S = evaluate_inbounds(sfe[m], k, nu_ou, nu_eu, nu_ol, nu_el)
-        C = evaluate_inbounds(cfe[m], k, nu_ou, nu_eu, nu_ol, nu_el)
-        θro += dot((S, C), sincos(m * θo))
-        θri += dot((S, C), sincos(m * θi))
+    θro, θri = θr_oi(θo, θi, c0, cfe, sfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+
+    Ro = R0 + a * cos(θro)
+    Ri = R0 + a * cos(θri)
+
+    reso =  Ro - R
+    resi =  Ri - R
+    sign_res = sign(reso) * sign(resi)
+    if abs(reso) < abs(resi)
+        return return_θ ? θo : sign_res * abs(reso)
     end
-    dR = R0 - R
-    reso =  (dR + a * cos(θro))^2
-    resi =  (dR + a * cos(θri))^2
-    if reso < resi
-        return_θ ? (return θo) : (return reso)
-    else
-        return_θ ? (return θi) : (return resi)
-    end
+    return return_θ ? θi : sign_res * abs(resi)
 end
 
 function res_zext(ρ::Real, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, Z::Real)
@@ -162,103 +205,127 @@ function res_zext(ρ::Real, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_r
     ϵ = evaluate_inbounds(ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     κ = evaluate_inbounds(κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     b = R0 * ϵ * κ
-    return (Z0 + sign(Z-Z0) * b - Z)^2
+    return Z0 + sign(Z-Z0) * b - Z
 end
 
-
-function ρθ_RZ(shot::Shot, R::Real, Z::Real, R0::FE_rep, Z0::FE_rep, ϵ::FE_rep, κ::FE_rep, c0::FE_rep,
-               c::AbstractVector{<:FE_rep}, s::AbstractVector{<:FE_rep})
+function ρθ_approx(shot::Shot, R::Real, Z::Real)
 
     ki, ρi, θi, ko, ρo, θo = surface_bracket(shot, R, Z)
     ki==ko && return ρo, θo # on a surface exactly
 
+    @views So = shot.surfaces[:, ko]
+    Ro = R_MXH(θo, So)
+    Zo = Z_MXH(θo, So)
+
+    Δo = sqrt((R - Ro)^2 + (Z - Zo)^2)
+
+    @views Si = shot.surfaces[:, ki]
+    Ri = R_MXH(θi, Si)
+    Zi = Z_MXH(θi, Si)
+    Δi = sqrt((R - Ri)^2 + (Z - Zi)^2)
+
+    # linearly interpolate in Δ
+    invΔ = 1.0 / (Δi + Δo)
+    ρ = (ρo * Δi + ρi * Δo) * invΔ
+    θ = (θo * Δi + θi * Δo) * invΔ
+    return ρ, θ
+end
+
+function ρθ_RZ(shot::Shot, R::Real, Z::Real)
+
+    ki, ρi, θi, ko, ρo, θo = surface_bracket(shot, R, Z)
+    ki==ko && return ρo, θo # on a surface exactly
     if abs(θi) == 0.5 * π
         # find ρ where Z = Zext
-        f_zext(x) = res_zext(x, R0, Z0, ϵ, κ, Z)
+
+        f_zext(x) = res_zext(x, shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, Z)^2
         ρi = optimize(f_zext, ρi, ρo).minimizer
     end
 
-    f_find_ρ(x) = res_find_ρ(x, R0, Z0, ϵ, κ, c0, c, s, R, Z)
-
+    f_find_ρ(x) = res_find_ρ(x, shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe, shot.cfe, shot.sfe, R, Z)^2
     ρ = optimize(f_find_ρ, ρi, ρo).minimizer
 
-    θ = res_find_ρ(ρ, R0, Z0, ϵ, κ, c0, c, s, R, Z, return_θ=true)
+    θ = res_find_ρ(ρ, shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe, shot.cfe, shot.sfe, R, Z, return_θ=true)
 
     return ρ, θ
 end
 
-Tr(ρ, θ, R0, Z0, ϵ, κ, c0, c, s) = Tr(ρ, θ, c0, c, s)
-function Tr(ρ::Real, θ::Real, c0::FE_rep, c::AbstractVector{<:FE_rep}, s::AbstractVector{<:FE_rep})
-    θr = θ + c0(ρ)
-    @inbounds for m in eachindex(c)
-        S = s[m](ρ)
-        C = c[m](ρ)
+##########################################################
+# BCL 8/24/22: THESE SHOULD ALL MAKE USE OF compute_bases
+##########################################################
+
+Tr(ρ, θ, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe) = Tr(ρ, θ, c0fe, cfe, sfe)
+function Tr(ρ::Real, θ::Real, c0fe::FE_rep, cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep})
+    θr = θ + c0fe(ρ)
+    @inbounds for m in eachindex(cfe)
+        S = sfe[m](ρ)
+        C = cfe[m](ρ)
         θr += dot((S, C), sincos(m * θ))
     end
     return θr
 end
 
-dTr_dρ(ρ, θ, R0, Z0, ϵ, κ, c0, c, s) = dTr_dρ(ρ, θ, c0, c, s)
-function dTr_dρ(ρ::Real, θ::Real, c0::FE_rep, c::AbstractVector{<:FE_rep}, s::AbstractVector{<:FE_rep})
-    dθr_dρ = D(c0, ρ)
-    @inbounds for m in eachindex(c)
-        dS = D(s[m], ρ)
-        dC = D(c[m], ρ)
+dTr_dρ(ρ, θ, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe) = dTr_dρ(ρ, θ, c0fe, cfe, sfe)
+function dTr_dρ(ρ::Real, θ::Real, c0fe::FE_rep, cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep})
+    dθr_dρ = D(c0fe, ρ)
+    @inbounds for m in eachindex(cfe)
+        dS = D(sfe[m], ρ)
+        dC = D(cfe[m], ρ)
         dθr_dρ += dot((dS, dC), sincos(m * θ))
     end
     return dθr_dρ
 end
 
-dTr_dθ(ρ, θ, R0, Z0, ϵ, κ, c0, c, s) = dTr_dθ(ρ, θ, c, s)
-function dTr_dθ(ρ::Real, θ::Real, c::AbstractVector{<:FE_rep}, s::AbstractVector{<:FE_rep})
+dTr_dθ(ρ, θ, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe) = dTr_dθ(ρ, θ, cfe, sfe)
+function dTr_dθ(ρ::Real, θ::Real, cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep})
     dθr_dθ = 1.0
-    @inbounds for m in eachindex(c)
-        S = s[m](ρ)
-        C = c[m](ρ)
+    @inbounds for m in eachindex(cfe)
+        S = sfe[m](ρ)
+        C = cfe[m](ρ)
         dθr_dθ += dot((-C, S), sincos(m * θ))
     end
     return dθr_dθ
 end
 
-dR_dρ(ρ, θ, R0, Z0, ϵ, κ, c0, c, s) = dR_dρ(ρ, θ, R0, ϵ, c0, c, s)
-function dR_dρ(ρ::Real, θ::Real, R0::FE_rep, ϵ::FE_rep, c0::FE_rep, c::AbstractVector{<:FE_rep}, s::AbstractVector{<:FE_rep})
-    θr = Tr(ρ, θ, c0, c, s)
-    dR_dρ = R0(ρ) + (R0(ρ) * D(ϵ, ρ) + D(R0, ρ) * ϵ(ρ)) * cos(θr)
-    dR_dρ -= R0(ρ) * ϵ(ρ) * sin(θr) * dTr_dρ(ρ, θ, c0, c, s)
+dR_dρ(ρ, θ, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe) = dR_dρ(ρ, θ, R0fe, ϵfe, c0fe, cfe, sfe)
+function dR_dρ(ρ::Real, θ::Real, R0fe::FE_rep, ϵfe::FE_rep, c0fe::FE_rep, cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep})
+    θr = Tr(ρ, θ, c0fe, cfe, sfe)
+    dR_dρ = R0fe(ρ) + (R0fe(ρ) * D(ϵfe, ρ) + D(R0fe, ρ) * ϵfe(ρ)) * cos(θr)
+    dR_dρ -= R0fe(ρ) * ϵfe(ρ) * sin(θr) * dTr_dρ(ρ, θ, c0fe, cfe, sfe)
     return dR_dρ
 end
 
-dZ_dρ(ρ, θ, R0, Z0, ϵ, κ, c0, c, s) = dZ_dρ(ρ, θ, R0, Z0, ϵ, κ)
-function dZ_dρ(ρ::Real, θ::Real, R0::FE_rep, Z0::FE_rep, ϵ::FE_rep, κ::FE_rep)
-    dZ_dρ = D(R0, ρ) * ϵ(ρ) * κ(ρ) + R0(ρ) * D(ϵ, ρ) * κ(ρ) + R0(ρ) *  ϵ(ρ) * D(κ, ρ)
-    dZ_dρ = D(Z0, ρ) - dZ_dρ * sin(θ)
+dZ_dρ(ρ, θ, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe) = dZ_dρ(ρ, θ, R0fe, Z0fe, ϵfe, κfe)
+function dZ_dρ(ρ::Real, θ::Real, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep)
+    dZ_dρ = D(R0fe, ρ) * ϵfe(ρ) * κfe(ρ) + R0fe(ρ) * D(ϵfe, ρ) * κfe(ρ) + R0fe(ρ) *  ϵfe(ρ) * D(κfe, ρ)
+    dZ_dρ = D(Z0fe, ρ) - dZ_dρ * sin(θ)
     return dZ_dρ
 end
 
-dR_dθ(ρ, θ, R0, Z0, ϵ, κ, c0, c, s) = dR_dθ(ρ, θ, R0, ϵ, c0, c, s)
-function dR_dθ(ρ::Real, θ::Real, R0::FE_rep, ϵ::FE_rep, c0::FE_rep, c::AbstractVector{<:FE_rep}, s::AbstractVector{<:FE_rep})
-    return -R0(ρ) * ϵ(ρ) * sin(Tr(ρ, θ, c0, c, s)) * dTr_dθ(ρ, θ, c, s)
+dR_dθ(ρ, θ, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe) = dR_dθ(ρ, θ, R0fe, ϵfe, c0fe, cfe, sfe)
+function dR_dθ(ρ::Real, θ::Real, R0fe::FE_rep, ϵfe::FE_rep, c0fe::FE_rep, cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep})
+    return -R0fe(ρ) * ϵfe(ρ) * sin(Tr(ρ, θ, c0fe, cfe, sfe)) * dTr_dθ(ρ, θ, cfe, sfe)
 end
 
-dZ_dθ(ρ, θ, R0, Z0, ϵ, κ, c0, c, s) = dZ_dθ(ρ, θ, R0, ϵ, κ)
-function dZ_dθ(ρ::Real, θ::Real, R0::FE_rep, ϵ::FE_rep, κ::FE_rep)
-    return -R0(ρ) * ϵ(ρ) * κ(ρ) * cos(θ)
+dZ_dθ(ρ, θ, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe) = dZ_dθ(ρ, θ, R0fe, ϵfe, κfe)
+function dZ_dθ(ρ::Real, θ::Real, R0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep)
+    return -R0fe(ρ) * ϵfe(ρ) * κfe(ρ) * cos(θ)
 end
 
-function Jacobian(ρ::Real, θ::Real, R0::FE_rep, Z0::FE_rep, ϵ::FE_rep, κ::FE_rep, c0::FE_rep, c::AbstractVector{<:FE_rep}, s::AbstractVector{<:FE_rep})
-    J = dR_dθ(ρ, θ, R0, ϵ, c0, c, s) * dZ_dρ(ρ, θ, R0, Z0, ϵ, κ)
-    J -= dZ_dθ(ρ, θ, R0, ϵ, κ) * dR_dρ(ρ, θ, R0, ϵ, c0, c, s)
-    return R_MXH(θ, MXH(R0, Z0, ϵ, κ, c0, c, s)) * J
+function Jacobian(ρ::Real, θ::Real, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep, cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep})
+    J = dR_dθ(ρ, θ, R0fe, ϵfe, c0fe, cfe, sfe) * dZ_dρ(ρ, θ, R0fe, Z0fe, ϵfe, κfe)
+    J -= dZ_dθ(ρ, θ, R0fe, ϵfe, κfe) * dR_dρ(ρ, θ, R0fe, ϵfe, c0fe, cfe, sfe)
+    return R_MXH(θ, MXH(R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe)) * J
 end
 
-function ∇ρ(ρ::Real, θ::Real, R0::FE_rep, Z0::FE_rep, ϵ::FE_rep, κ::FE_rep, c0::FE_rep, c::AbstractVector{<:FE_rep}, s::AbstractVector{<:FE_rep})
-    gr2 = (R_MXH(θ, MXH(R0, Z0, ϵ, κ, c0, c, s)) / Jacobian(ρ, θ, R0, Z0, ϵ, κ, c0, c, s))^2
-    gr2 *= dR_dθ(ρ, θ, R0, ϵ, c0, c, s)^2 + dZ_dθ(ρ, θ, R0, ϵ, κ)^2
+function ∇ρ(ρ::Real, θ::Real, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep, cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep})
+    gr2 = (R_MXH(θ, MXH(R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe)) / Jacobian(ρ, θ, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe))^2
+    gr2 *= dR_dθ(ρ, θ, R0fe, ϵfe, c0fe, cfe, sfe)^2 + dZ_dθ(ρ, θ, R0fe, ϵfe, κfe)^2
     return sqrt(gr2)
 end
 
-function ∇θ(ρ::Real, θ::Real, R0::FE_rep, Z0::FE_rep, ϵ::FE_rep, κ::FE_rep, c0::FE_rep, c::AbstractVector{<:FE_rep}, s::AbstractVector{<:FE_rep})
-    gt2 = (R_MXH(θ, MXH(R0, Z0, ϵ, κ, c0, c, s)) / Jacobian(ρ, θ, R0, Z0, ϵ, κ, c0, c, s))^2
-    gt2 *= dR_dρ(ρ, θ, R0, ϵ, c0, c, s)^2 + dZ_dρ(ρ, θ, R0, Z0, ϵ, κ)^2
+function ∇θ(ρ::Real, θ::Real, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep, cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep})
+    gt2 = (R_MXH(θ, MXH(R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe)) / Jacobian(ρ, θ, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe))^2
+    gt2 *= dR_dρ(ρ, θ, R0fe, ϵfe, c0fe, cfe, sfe)^2 + dZ_dρ(ρ, θ, R0fe, Z0fe, ϵfe, κfe)^2
     return sqrt(gt2)
 end

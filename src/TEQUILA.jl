@@ -3,12 +3,15 @@ module TEQUILA
 
 using FiniteElementHermite
 using MillerExtendedHarmonic
+#import MillerExtendedHarmonic: gρρ
 using Plots
-import FFTW: fft!
-import LinearAlgebra: dot, ldiv!, factorize
+using FFTW
+import LinearAlgebra: dot, ldiv!, factorize, mul!
 using StaticArrays
 using Optim
 import LineSearches
+using SparseArrays
+#using Memoize
 
 const halfpi = 0.5 * π
 const twopi = 2π
@@ -24,12 +27,16 @@ include("shot.jl")
 export Shot, psi_ρθ, plot_shot, find_axis
 
 include("FE_Fourier.jl")
-#export θFD_ρIP_f_nu, fourier_decompose
+export θFD_ρIP_f_nu, fourier_decompose!, fft_prealloc
 
 include("surfaces.jl")
 export concentric_surface, concentric_surface!, surfaces_FE, R_Z, ρθ_RZ, surface_bracket
+export Jacobian, gρρ, dR_dρ, dR_dθ, dZ_dρ, dZ_dθ
 
 include("fit_MXH.jl")
 export refit
+
+include("GS.jl")
+export preallocate_Astar, define_Astar, define_Astar!, set_bc!, define_B, define_B!
 
 end

@@ -1,5 +1,5 @@
 mutable struct Shot{I1<:Integer, VR1<:AbstractVector{<:Real}, MR1<:AbstractMatrix{<:Real}, MR2<:AbstractMatrix{<:Real},
-                    FE1<:FE_rep, VFE1<:AbstractVector{<:FE_rep}} # <: AbstractEquilibrium (eventually)
+                    FE1<:FE_rep, VFE1<:AbstractVector{<:FE_rep}, VR2<:AbstractVector{<:Real}} # <: AbstractEquilibrium (eventually)
     N :: I1
     M :: I1
     ρ :: VR1
@@ -12,14 +12,19 @@ mutable struct Shot{I1<:Integer, VR1<:AbstractVector{<:Real}, MR1<:AbstractMatri
     c0fe::FE1
     cfe :: VFE1
     sfe :: VFE1
+    _cx :: VR2
+    _sx :: VR2
+    _dcx :: VR2
+    _dsx :: VR2
 end
 
 function compute_Cmatrix(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, Ψ_ρθ; Afac::Union{Nothing, AbstractMatrix{<:Real}}=nothing)
     (Afac === nothing) && (Afac = factorize(mass_matrix(N, ρ)))
-    C = zeros(2*N, 2(M+1))
+    C = zeros(2N, 2M+1)
+    Fi, Fo, P = fft_prealloc(M)
     for j in 1:N
-        @views θFD_ρIP_f_nu!(C[2j-1,:], Ψ_ρθ, νo, j, ρ, M)
-        @views θFD_ρIP_f_nu!(C[2j  ,:], Ψ_ρθ, νe, j, ρ, M)
+        @views θFD_ρIP_f_nu!(C[2j-1, :], Ψ_ρθ, νo, j, ρ, M, Fi, Fo, P)
+        @views θFD_ρIP_f_nu!(C[2j  , :], Ψ_ρθ, νe, j, ρ, M, Fi, Fo, P)
     end
     ldiv!(Afac, C)
     return C
@@ -57,8 +62,10 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ; zero_boundary=fal
 
     L = length(boundary.c)
     surfaces = zeros(5 + 2L, N)
+    Stmp = deepcopy(boundary)
     for k in eachindex(ρ)
-        @views flat_coeffs!(surfaces[:, k], concentric_surface(ρ[k], boundary))
+        concentric_surface!(Stmp, ρ[k], boundary)
+        @views flat_coeffs!(surfaces[:, k], Stmp)
     end
 
     S_FE = surfaces_FE(ρ, surfaces)
@@ -75,14 +82,27 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ; zero_boundary=fal
     return Shot(N, M, ρ, surfaces, C, S_FE...)
 end
 
+function Shot(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, surfaces::AbstractMatrix{<:Real},
+              C::AbstractMatrix{<:Real}, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep,
+              cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep})
+    L = length(cfe)
+    cx = zeros(L)
+    sx = zeros(L)
+    dcx = zeros(L)
+    dsx = zeros(L)
+    Shot(N, M, ρ, surfaces, C, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, cx, sx, dcx, dsx)
+end
+
 function psi_ρθ(shot::Shot, ρ, θ)
     psi = 0.0
 
     k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
     nus = (nu_ou, nu_eu, nu_ol, nu_el)
-    @inbounds for m in 0:shot.M
+
+    psi += dot(shot.C[2k-1:2k+2, 1], nus)
+    @inbounds for m in 1:shot.M
         @views C = dot(shot.C[2k-1:2k+2, 2m+1], nus)
-        @views S = dot(shot.C[2k-1:2k+2, 2m+2], nus)
+        @views S = dot(shot.C[2k-1:2k+2, 2m], nus)
         psi += dot((S, C), sincos(m * θ))
     end
     return psi
@@ -101,7 +121,7 @@ function plot_shot(shot::Shot, axes=:rz; points=101)
         xs = range(0, 1, points)
         ys = range(0, twopi, points)
         G = [psi_ρθ(shot, x, y) for y in ys, x in xs]
-       heatmap!(p, ys, xs, G')
+       heatmap!(p, ys, xs, G', c=:viridis)
        contour!(p, ys, xs, G', c=:white)
        plot!(p, xlabel="θ", ylabel="ρ")
     elseif axes == :rz
@@ -121,12 +141,10 @@ function plot_shot(shot::Shot, axes=:rz; points=101)
         xs = range(Rmin, Rmax, points)
         ys = range(Zmin, Zmax, points)
 
-        S_FE = surfaces_FE(shot)
-
         G = zeros(points, points)
         for (i,x) in enumerate(xs)
             for (j,y) in enumerate(ys)
-                r, z = ρ_θ(S_FE..., x, y)
+                r, z = ρθ_RZ(shot, x, y)
                 if r == NaN
                     G[j,i] = NaN
                 else
@@ -134,7 +152,7 @@ function plot_shot(shot::Shot, axes=:rz; points=101)
                 end
             end
         end
-        heatmap!(p, xs, ys, G, aspect_ratio=:equal, clim=(0,1))
+        heatmap!(p, xs, ys, G, aspect_ratio=:equal)#, clim=(0,1))
     end
     return p
 end

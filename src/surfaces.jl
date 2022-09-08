@@ -87,34 +87,7 @@ function surfaces_FE(ρ:: AbstractVector{<:Real}, surfaces:: AbstractMatrix{<:Re
     return R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe
 end
 
-function R_Z(shot::Shot, x::Real, t::Real)
-    return R_Z(shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe, shot.cfe, shot.sfe, x, t)
-end
 
-function R_Z(R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep,
-             cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep}, x::Real, t::Real)
-
-    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(R0fe.x, x)
-    R0x = evaluate_inbounds(R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    Z0x = evaluate_inbounds(Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    ϵx = evaluate_inbounds(ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    κx = evaluate_inbounds(κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    c0x = evaluate_inbounds(c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-
-    ax = R0x * ϵx
-
-    csx = 0.0
-    @inbounds for m in eachindex(cfe)
-        smx = evaluate_inbounds(sfe[m], k, nu_ou, nu_eu, nu_ol, nu_el)
-        cmx = evaluate_inbounds(cfe[m], k, nu_ou, nu_eu, nu_ol, nu_el)
-        csx += dot((smx, cmx), sincos(m * t))
-    end
-
-    tr = t + c0x + csx
-    R = R0x + ax * cos(tr)
-    Z = Z0x - κx * ax * sin(t)
-    return R, Z
-end
 
 outside(S::Union{MXH, AbstractVector{<:Real}}, x) = !in_surface(x[1], x[2], S);
 
@@ -254,78 +227,291 @@ end
 # BCL 8/24/22: THESE SHOULD ALL MAKE USE OF compute_bases
 ##########################################################
 
-Tr(ρ, θ, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe) = Tr(ρ, θ, c0fe, cfe, sfe)
-function Tr(ρ::Real, θ::Real, c0fe::FE_rep, cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep})
-    θr = θ + c0fe(ρ)
-    @inbounds for m in eachindex(cfe)
-        S = sfe[m](ρ)
-        C = cfe[m](ρ)
-        θr += dot((S, C), sincos(m * θ))
+function evaluate_csx!(shot::Shot, k::Integer, nu_ou, nu_eu, nu_ol, nu_el)
+    for m in eachindex(shot.cfe)
+        shot._cx[m] = evaluate_inbounds(shot.cfe[m], k, nu_ou, nu_eu, nu_ol, nu_el)
+        shot._sx[m] = evaluate_inbounds(shot.sfe[m], k, nu_ou, nu_eu, nu_ol, nu_el)
     end
-    return θr
+    return shot
 end
 
-dTr_dρ(ρ, θ, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe) = dTr_dρ(ρ, θ, c0fe, cfe, sfe)
-function dTr_dρ(ρ::Real, θ::Real, c0fe::FE_rep, cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep})
-    dθr_dρ = D(c0fe, ρ)
-    @inbounds for m in eachindex(cfe)
-        dS = D(sfe[m], ρ)
-        dC = D(cfe[m], ρ)
-        dθr_dρ += dot((dS, dC), sincos(m * θ))
+function evaluate_dcsx!(shot::Shot, k::Integer, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    for m in eachindex(shot.cfe)
+        shot._dcx[m] =  evaluate_inbounds(shot.cfe[m], k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+        shot._dsx[m] =  evaluate_inbounds(shot.sfe[m], k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     end
-    return dθr_dρ
+    return shot
 end
 
-dTr_dθ(ρ, θ, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe) = dTr_dθ(ρ, θ, cfe, sfe)
-function dTr_dθ(ρ::Real, θ::Real, cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep})
-    dθr_dθ = 1.0
+
+function Tr(shot::Shot, ρ::Real, θ::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
+    c0 = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+    return MillerExtendedHarmonic.Tr(θ, c0, shot._cx, shot._sx)
+end
+
+function dTr_dρ(shot::Shot, ρ::Real, θ::Real)
+    k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_D_bases(shot.ρ, ρ)
+    dc0 = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    return MillerExtendedHarmonic.dTr_dρ(θ, dc0, shot._dcx, shot._dsx) # ρ derivative just passes through
+end
+
+function dTr_dθ(shot::Shot, ρ::Real, θ::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
+    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+    return MillerExtendedHarmonic.dTr_dθ(θ, shot._cx, shot._sx)
+end
+
+function R(shot::Shot, ρ::Real, θ::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
+    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ax = R0x * ϵx
+
+    return MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, shot._cx, shot._sx, ax)
+end
+
+function Z(shot::Shot, ρ::Real, θ::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
+    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    Z0x = evaluate_inbounds(shot.Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ax = R0x * ϵx
+
+    return MillerExtendedHarmonic.Z_MXH(θ, Z0x, κx, ax)
+end
+
+function R_Z(shot::Shot, ρ::Real, θ::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
+    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    Z0x = evaluate_inbounds(shot.Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ax = R0x * ϵx
+
+    R = MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, shot._cx, shot._sx, ax)
+    Z = MillerExtendedHarmonic.Z_MXH(θ, Z0x, κx, ax)
+    return R, Z
+end
+
+function R_Z(R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep,
+    cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep}, ρ::Real, θ::Real)
+
+    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(R0fe.x, ρ)
+    R0x = evaluate_inbounds(R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    Z0x = evaluate_inbounds(Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+
+    ax = R0x * ϵx
+
+    csx = 0.0
     @inbounds for m in eachindex(cfe)
-        S = sfe[m](ρ)
-        C = cfe[m](ρ)
-        dθr_dθ += dot((-C, S), sincos(m * θ))
+        smx = evaluate_inbounds(sfe[m], k, nu_ou, nu_eu, nu_ol, nu_el)
+        cmx = evaluate_inbounds(cfe[m], k, nu_ou, nu_eu, nu_ol, nu_el)
+        csx += dot((smx, cmx), sincos(m * θ))
     end
-    return dθr_dθ
+
+    θr = θ + c0x + csx
+    R = R0x + ax * cos(θr)
+    Z = MillerExtendedHarmonic.Z_MXH(θ, Z0x, κx, ax)
+    return R, Z
 end
 
-dR_dρ(ρ, θ, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe) = dR_dρ(ρ, θ, R0fe, ϵfe, c0fe, cfe, sfe)
-function dR_dρ(ρ::Real, θ::Real, R0fe::FE_rep, ϵfe::FE_rep, c0fe::FE_rep, cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep})
-    θr = Tr(ρ, θ, c0fe, cfe, sfe)
-    dR_dρ = R0fe(ρ) + (R0fe(ρ) * D(ϵfe, ρ) + D(R0fe, ρ) * ϵfe(ρ)) * cos(θr)
-    dR_dρ -= R0fe(ρ) * ϵfe(ρ) * sin(θr) * dTr_dρ(ρ, θ, c0fe, cfe, sfe)
-    return dR_dρ
+function dR_dρ(shot::Shot, ρ::Real, θ::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
+    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+
+    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+
+    return MillerExtendedHarmonic.dR_dρ(θ, R0x, ϵx, c0x, shot._cx, shot._sx, dR0x, dϵx, dc0x, shot._dcx, shot._dsx)
 end
 
-dZ_dρ(ρ, θ, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe) = dZ_dρ(ρ, θ, R0fe, Z0fe, ϵfe, κfe)
-function dZ_dρ(ρ::Real, θ::Real, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep)
-    dZ_dρ = D(R0fe, ρ) * ϵfe(ρ) * κfe(ρ) + R0fe(ρ) * D(ϵfe, ρ) * κfe(ρ) + R0fe(ρ) *  ϵfe(ρ) * D(κfe, ρ)
-    dZ_dρ = D(Z0fe, ρ) - dZ_dρ * sin(θ)
-    return dZ_dρ
+function dZ_dρ(shot::Shot, ρ::Real, θ::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
+    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+
+    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+
+    return MillerExtendedHarmonic.dZ_dρ(θ, R0x, ϵx, κx, dR0x, dZ0x, dϵx, dκx)
 end
 
-dR_dθ(ρ, θ, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe) = dR_dθ(ρ, θ, R0fe, ϵfe, c0fe, cfe, sfe)
-function dR_dθ(ρ::Real, θ::Real, R0fe::FE_rep, ϵfe::FE_rep, c0fe::FE_rep, cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep})
-    return -R0fe(ρ) * ϵfe(ρ) * sin(Tr(ρ, θ, c0fe, cfe, sfe)) * dTr_dθ(ρ, θ, cfe, sfe)
+function dR_dθ(shot::Shot, ρ::Real, θ::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
+    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+    return MillerExtendedHarmonic.dR_dθ(θ, R0x, ϵx, c0x, shot._cx, shot._sx)
 end
 
-dZ_dθ(ρ, θ, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe) = dZ_dθ(ρ, θ, R0fe, ϵfe, κfe)
-function dZ_dθ(ρ::Real, θ::Real, R0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep)
-    return -R0fe(ρ) * ϵfe(ρ) * κfe(ρ) * cos(θ)
+function dZ_dθ(shot::Shot, ρ::Real, θ::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
+    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    return MillerExtendedHarmonic.dZ_dθ(θ, R0x, ϵx, κx)
 end
 
-function Jacobian(ρ::Real, θ::Real, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep, cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep})
-    J = dR_dθ(ρ, θ, R0fe, ϵfe, c0fe, cfe, sfe) * dZ_dρ(ρ, θ, R0fe, Z0fe, ϵfe, κfe)
-    J -= dZ_dθ(ρ, θ, R0fe, ϵfe, κfe) * dR_dρ(ρ, θ, R0fe, ϵfe, c0fe, cfe, sfe)
-    return R_MXH(θ, MXH(R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe)) * J
+function Jacobian(shot::Shot, ρ::Real, θ::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
+    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+
+    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+
+    return MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, shot._cx, shot._sx, dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx, shot._dsx)
 end
 
-function ∇ρ(ρ::Real, θ::Real, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep, cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep})
-    gr2 = (R_MXH(θ, MXH(R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe)) / Jacobian(ρ, θ, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe))^2
-    gr2 *= dR_dθ(ρ, θ, R0fe, ϵfe, c0fe, cfe, sfe)^2 + dZ_dθ(ρ, θ, R0fe, ϵfe, κfe)^2
-    return sqrt(gr2)
+function ∇ρ(shot::Shot, ρ::Real, θ::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
+    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+
+    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+
+    return MillerExtendedHarmonic.∇ρ(θ, R0x, ϵx, κx, c0x, shot._cx, shot._sx, dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx, shot._dsx)
 end
 
-function ∇θ(ρ::Real, θ::Real, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep, cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep})
-    gt2 = (R_MXH(θ, MXH(R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe)) / Jacobian(ρ, θ, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe))^2
-    gt2 *= dR_dρ(ρ, θ, R0fe, ϵfe, c0fe, cfe, sfe)^2 + dZ_dρ(ρ, θ, R0fe, Z0fe, ϵfe, κfe)^2
-    return sqrt(gt2)
+function ∇ρ2(shot::Shot, ρ::Real, θ::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
+    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+
+    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+
+    return MillerExtendedHarmonic.∇ρ2(θ, R0x, ϵx, κx, c0x, shot._cx, shot._sx, dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx, shot._dsx)
+end
+
+function ∇θ(shot::Shot, ρ::Real, θ::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
+    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+
+    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+
+    return MillerExtendedHarmonic.∇θ(θ, R0x, ϵx, κx, c0x, shot._cx, shot._sx, dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx, shot._dsx)
+end
+
+function ∇θ2(shot::Shot, ρ::Real, θ::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
+    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+
+    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+
+    return MillerExtendedHarmonic.∇θ2(θ, R0x, ϵx, κx, c0x, shot._cx, shot._sx, dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx, shot._dsx)
+end
+
+function gρρ(shot::Shot, ρ::Real, θ::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
+    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+
+    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+
+    return MillerExtendedHarmonic.gρρ(θ, R0x, ϵx, κx, c0x, shot._cx, shot._sx, dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx, shot._dsx)
+end
+
+function gρθ(shot::Shot, ρ::Real, θ::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
+    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+
+    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+
+    return MillerExtendedHarmonic.gρθ(θ, R0x, ϵx, κx, c0x, shot._cx, shot._sx, dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx, shot._dsx)
+end
+
+function gθθ(shot::Shot, ρ::Real, θ::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
+    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+
+    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+
+    return MillerExtendedHarmonic.gθθ(θ, R0x, ϵx, κx, c0x, shot._cx, shot._sx, dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx, shot._dsx)
 end

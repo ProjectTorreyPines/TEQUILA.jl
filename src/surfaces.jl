@@ -1,18 +1,19 @@
-function concentric_surface(x::Real, boundary::MXH)
+function concentric_surface(x::Real, boundary::MXH; Raxis::Real = boundary.R0, Zaxis::Real = boundary.Z0)
     surface = deepcopy(boundary)
-    # these go to zero as you go to axis
-    surface.ϵ *= x
-    if x < 1.0
-        surface.c .*= x
-        surface.s .*= x
-    end
-    return surface
+    return scale_surface!(surface, x; Raxis, Zaxis)
 end
 
-function concentric_surface!(surface::MXH, x::Real, boundary::MXH)
+function concentric_surface!(surface::MXH, x::Real, boundary::MXH; Raxis::Real = boundary.R0, Zaxis::Real = boundary.Z0)
     copy_MXH!(surface, boundary)
+    return scale_surface!(surface, x; Raxis, Zaxis)
+end
+
+function scale_surface!(surface::MXH, x::Real; Raxis::Real = surface.R0, Zaxis::Real = surface.Z0)
     # these go to zero as you go to axis
-    surface.ϵ *= x
+    a = surface.R0 * surface.ϵ * x
+    surface.R0 = x * surface.R0 + (1.0 - x) * Raxis
+    surface.Z0 = x * surface.Z0 + (1.0 - x) * Zaxis
+    surface.ϵ  = a / surface.R0
     if x < 1.0
         surface.c .*= x
         surface.s .*= x
@@ -213,10 +214,15 @@ function ρθ_RZ(shot::Shot, R::Real, Z::Real)
 
         f_zext(x) = res_zext(x, shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, Z)^2
         ρi = optimize(f_zext, ρi, ρo).minimizer
+        #ρi = Roots.secant_method(f_zext, (ρi, ρo))
     end
-
     f_find_ρ(x) = res_find_ρ(x, shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe, shot.cfe, shot.sfe, R, Z)^2
     ρ = optimize(f_find_ρ, ρi, ρo).minimizer
+    #ρ = Roots.secant_method(f_find_ρ, (ρi, ρo))
+    # x0 = (ρi, ρo)
+    # M = Secant()
+    # ZP = ZeroProblem(f_find_ρ, x0)
+    # ρ = solve(ZP, M)
 
     θ = res_find_ρ(ρ, shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe, shot.cfe, shot.sfe, R, Z, return_θ=true)
 
@@ -514,4 +520,58 @@ function gθθ(shot::Shot, ρ::Real, θ::Real)
     evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
 
     return MillerExtendedHarmonic.gθθ(θ, R0x, ϵx, κx, c0x, shot._cx, shot._sx, dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx, shot._dsx)
+end
+
+function gρρ_gρθ(shot::Shot, ρ::Real, θ::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
+    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+
+    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+
+    return MillerExtendedHarmonic.gρρ_gρθ(θ, R0x, ϵx, κx, c0x, shot._cx, shot._sx, dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx, shot._dsx)
+end
+
+function gρθ_gθθ(shot::Shot, ρ::Real, θ::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
+    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+
+    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+
+    return MillerExtendedHarmonic.gρθ_gθθ(θ, R0x, ϵx, κx, c0x, shot._cx, shot._sx, dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx, shot._dsx)
+end
+
+function gρρ_gρθ_gθθ(shot::Shot, ρ::Real, θ::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
+    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+
+    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+
+    return MillerExtendedHarmonic.gρρ_gρθ_gθθ(θ, R0x, ϵx, κx, c0x, shot._cx, shot._sx, dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx, shot._dsx)
 end

@@ -3,14 +3,15 @@ module TEQUILA
 
 using FiniteElementHermite
 using MillerExtendedHarmonic
-#import MillerExtendedHarmonic: gρρ
 using Plots
 using FFTW
-import LinearAlgebra: dot, ldiv!, factorize, mul!
+using LinearAlgebra
 using StaticArrays
 using Optim
 import LineSearches
 using SparseArrays
+using Contour
+import Equilibrium: identify_cocos, transform_cocos, efit, Equilibrium
 #using Memoize
 
 const halfpi = 0.5 * π
@@ -19,6 +20,8 @@ const μ₀ = 4e-7*π
 const lower_2 = zeros(2)
 const upper_2 = zeros(2)
 const x0_2 = zeros(2)
+const Ncntr = 201
+const Ψcntr = zeros(Ncntr, Ncntr)
 
 include("initialize.jl")
 export Ψmiller
@@ -38,5 +41,8 @@ export refit
 
 include("GS.jl")
 export preallocate_Astar, define_Astar, define_Astar!, set_bc!, define_B, define_B!
+
+include("solve.jl")
+export solve
 
 end

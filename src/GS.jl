@@ -23,10 +23,11 @@ function preallocate_Astar(shot)
     Y = Vector{Float64}(undef, L)
     V = Vector{Float64}(undef, L)
     V .= NaN
+    #V = randn(L)
 
     block = 1
 
-    for j in 1:N
+    @inbounds for j in 1:N
 
         # block column
         je = 2j
@@ -114,12 +115,12 @@ end
 
 function define_Astar!(Astar, shot)
 
-    Fi, Fo, P = fft_prealloc(shot.M)
-    define_Astar!(Astar, shot, Fi, Fo, P)
+    Fi, dFi, Fo, P = fft_prealloc(shot.M)
+    define_Astar!(Astar, shot, Fi, dFi, Fo, P)
     return
 end
 
-function define_Astar!(Astar, shot, Fi, Fo, P)
+function define_Astar!(Astar, shot, Fi, dFi, Fo, P)
 
     N = shot.N
     M = shot.M
@@ -135,39 +136,8 @@ function define_Astar!(Astar, shot, Fi, Fo, P)
         Mc = 2m
         Ms = 2m - 1      # note that Ms = 0 for m = 0 won't exist
 
-        # # if m != 0
-        # #     cgrr  = (x, t) -> cos(m * t) * gρρ(shot, x, t)
-        # #     cgrt  = (x, t) -> cos(m * t) * gρθ(shot, x, t)
-        # #     dcgrt = (x, t) -> -m * sin(m * t) * gρθ(shot, x, t)
-        # #     dcgtt = (x, t) -> -m * sin(m * t) * gθθ(shot, x, t)
-
-        # #     sgrr  = (x, t) -> sin(m * t) * gρρ(shot, x, t)
-        # #     sgrt  = (x, t) -> sin(m * t) * gρθ(shot, x, t)
-        # #     dsgrt = (x, t) -> m * cos(m * t) * gρθ(shot, x, t)
-        # #     dsgtt = (x, t) -> m * cos(m * t) * gθθ(shot, x, t)
-        # # end
-        # # cgrr(x, t)  = (m == 0 ? cos(t) : cos(m * t)) * gρρ(shot, x, t)
-        # # cgrt(x, t)  = (m == 0 ? cos(t) : cos(m * t)) * gρθ(shot, x, t)
-        # # dcgrt(x, t) = (m == 0 ? -sin(t) : -m * sin(m * t)) * gρθ(shot, x, t)
-        # # dcgtt(x, t) = (m == 0 ? -sin(t) : -m * sin(m * t)) * gθθ(shot, x, t)
-
-        # # sgrr(x, t)  = (m == 0) ? 0.0 : sin(m * t) * gρρ(shot, x, t)
-        # # sgrt(x, t)  = (m == 0) ? 0.0 : sin(m * t) * gρθ(shot, x, t)
-        # # dsgrt(x, t) = (m == 0) ? 0.0 : m * cos(m * t) * gρθ(shot, x, t)
-        # # dsgtt(x, t) = (m == 0) ? 0.0 : m * cos(m * t) * gθθ(shot, x, t)
-
-        cgrr(x, t)  =    -cos(m * t) * gρρ(shot, x, t)
-        cgrt(x, t)  =    -cos(m * t) * gρθ(shot, x, t)
-        dcgrt(x, t) = m * sin(m * t) * gρθ(shot, x, t)
-        dcgtt(x, t) = m * sin(m * t) * gθθ(shot, x, t)
-
-        sgrr(x, t)  =     -sin(m * t) * gρρ(shot, x, t)
-        sgrt(x, t)  =     -sin(m * t) * gρθ(shot, x, t)
-        dsgrt(x, t) = -m * cos(m * t) * gρθ(shot, x, t)
-        dsgtt(x, t) = -m * cos(m * t) * gθθ(shot, x, t)
-
         # loop over rows of blocks
-        for j in 1:N
+        @inbounds for j in 1:N
 
             # block row
             je = 2j
@@ -184,192 +154,120 @@ function define_Astar!(Astar, shot, Fi, Fo, P)
 
                 # [je, je-3]
                 Ie = b2e(shot, je-3)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], cgrr, D_νe, j, D_νo, j-1, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], cgrt, νe, j, D_νo, j-1, ρ, M, Fi, Fo, P, fft_op=:derivative)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], dcgrt, D_νe, j, νo, j-1, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], dcgtt, νe, j, νo, j-1, ρ, M, Fi, Fo, P, fft_op = :derivative)
+                @views compute_element(Astar[Jes, Ie + Mc], shot, :cos, m, :even, j, :odd, j-1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
                 if m != 0
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], sgrr, D_νe, j, D_νo, j-1, ρ, M, Fi, Fo, P)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], sgrt, νe, j, D_νo, j-1, ρ, M, Fi, Fo, P, fft_op=:derivative)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], dsgrt, D_νe, j, νo, j-1, ρ, M, Fi, Fo, P)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], dsgtt, νe, j, νo, j-1, ρ, M, Fi, Fo, P, fft_op = :derivative)
+                    @views compute_element(Astar[Jes, Ie + Ms], shot, :sin, m, :even, j, :odd, j-1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
                 end
 
                 # T[jo, jo-2]
                 Io = b2e(shot, jo-2)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], cgrr, D_νo, j, D_νo, j-1, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], cgrt, νo, j, D_νo, j-1, ρ, M, Fi, Fo, P, fft_op=:derivative)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], dcgrt, D_νo, j, νo, j-1, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], dcgtt, νo, j, νo, j-1, ρ, M, Fi, Fo, P, fft_op = :derivative)
+                @views compute_element(Astar[Jos, Io + Mc], shot, :cos, m, :odd, j, :odd, j-1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
                 if m != 0
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], sgrr, D_νo, j, D_νo, j-1, ρ, M, Fi, Fo, P)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], sgrt, νo, j, D_νo, j-1, ρ, M, Fi, Fo, P, fft_op=:derivative)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], dsgrt, D_νo, j, νo, j-1, ρ, M, Fi, Fo, P)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], dsgtt, νo, j, νo, j-1, ρ, M, Fi, Fo, P, fft_op = :derivative)
+                    @views compute_element(Astar[Jos, Io + Ms], shot, :sin, m, :odd, j, :odd, j-1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
                 end
 
                 # T[je, je-2]
                 Ie = b2e(shot, je-2)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], cgrr, D_νe, j, D_νe, j-1, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], cgrt, νe, j, D_νe, j-1, ρ, M, Fi, Fo, P, fft_op=:derivative)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], dcgrt, D_νe, j, νe, j-1, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], dcgtt, νe, j, νe, j-1, ρ, M, Fi, Fo, P, fft_op = :derivative)
+                @views compute_element(Astar[Jes, Ie + Mc], shot, :cos, m, :even, j, :even, j-1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
                 if m != 0
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], sgrr, D_νe, j, D_νe, j-1, ρ, M, Fi, Fo, P)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], sgrt, νe, j, D_νe, j-1, ρ, M, Fi, Fo, P, fft_op=:derivative)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], dsgrt, D_νe, j, νe, j-1, ρ, M, Fi, Fo, P)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], dsgtt, νe, j, νe, j-1, ρ, M, Fi, Fo, P, fft_op = :derivative)
+                    @views compute_element(Astar[Jes, Ie + Ms], shot, :sin, m, :even, j, :even, j-1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
                 end
 
                 # T[jo, jo-1]
                 Io = b2e(shot, jo-1)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], cgrr, D_νo, j, D_νe, j-1, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], cgrt, νo, j, D_νe, j-1, ρ, M, Fi, Fo, P, fft_op=:derivative)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], dcgrt, D_νo, j, νe, j-1, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], dcgtt, νo, j, νe, j-1, ρ, M, Fi, Fo, P, fft_op = :derivative)
+                @views compute_element(Astar[Jos, Io + Mc], shot, :cos, m, :odd, j, :even, j-1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
                 if m != 0
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], sgrr, D_νo, j, D_νe, j-1, ρ, M, Fi, Fo, P)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], sgrt, νo, j, D_νe, j-1, ρ, M, Fi, Fo, P, fft_op=:derivative)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], dsgrt, D_νo, j, νe, j-1, ρ, M, Fi, Fo, P)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], dsgtt, νo, j, νe, j-1, ρ, M, Fi, Fo, P, fft_op = :derivative)
+                    @views compute_element(Astar[Jos, Io + Ms], shot, :sin, m, :odd, j, :even, j-1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
                 end
             end
             # T[je, je-1]
             Ie = b2e(shot, je-1)
-            @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], cgrr, D_νe, j, D_νo, j, ρ, M, Fi, Fo, P)
-            @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], cgrt, νe, j, D_νo, j, ρ, M, Fi, Fo, P, fft_op=:derivative)
-            @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], dcgrt, D_νe, j, νo, j, ρ, M, Fi, Fo, P)
-            @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], dcgtt, νe, j, νo, j, ρ, M, Fi, Fo, P, fft_op = :derivative)
+            @views compute_element(Astar[Jes, Ie + Mc], shot, :cos, m, :even, j, :odd, j, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
             if m != 0
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], sgrr, D_νe, j, D_νo, j, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], sgrt, νe, j, D_νo, j, ρ, M, Fi, Fo, P, fft_op=:derivative)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], dsgrt, D_νe, j, νo, j, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], dsgtt, νe, j, νo, j, ρ, M, Fi, Fo, P, fft_op = :derivative)
+                @views compute_element(Astar[Jes, Ie + Ms], shot, :sin, m, :even, j, :odd, j, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
             end
 
             # Boundary term [νj gρρ D_νi]_0^1, non-zero for νj even and νi odd
             # sign flipped to account for later reversal
             if j == 1
                 # ρ=0
-                @views fourier_decompose!(Astar[Jes, Ie + Mc], θ ->  cgrr(0.0, θ), M, Fi, Fo, P)
+                @views fourier_decompose!(Astar[Jes, Ie + Mc], θ ->  -cos(m * θ) * gρρ(shot, 0.0, θ), M, Fi, Fo, P)
                 if m != 0
-                    @views fourier_decompose!(Astar[Jes, Ie + Ms], θ ->  sgrr(0.0, θ), M, Fi, Fo, P)
+                    @views fourier_decompose!(Astar[Jes, Ie + Ms], θ ->  -sin(m * θ) * gρρ(shot, 0.0, θ), M, Fi, Fo, P)
                 end
             elseif j == N
                 # ρ=1
-                @views fourier_decompose!(Astar[Jes, Ie + Mc], θ -> -cgrr(1.0, θ), M, Fi, Fo, P)
+                @views fourier_decompose!(Astar[Jes, Ie + Mc], θ -> cos(m * θ) * gρρ(shot, 1.0, θ), M, Fi, Fo, P)
                 if m != 0
-                    @views fourier_decompose!(Astar[Jes, Ie + Ms], θ -> -sgrr(1.0, θ), M, Fi, Fo, P)
+                    @views fourier_decompose!(Astar[Jes, Ie + Ms], θ -> sin(m * θ) * gρρ(shot, 1.0, θ), M, Fi, Fo, P)
                 end
             end
 
 
             # T[jo, jo]
             Io = Jo
-            @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], cgrr, D_νo, j, D_νo, j, ρ, M, Fi, Fo, P)
-            @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], cgrt, νo, j, D_νo, j, ρ, M, Fi, Fo, P, fft_op=:derivative)
-            @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], dcgrt, D_νo, j, νo, j, ρ, M, Fi, Fo, P)
-            @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], dcgtt, νo, j, νo, j, ρ, M, Fi, Fo, P, fft_op = :derivative)
+            @views compute_element(Astar[Jos, Io + Mc], shot, :cos, m, :odd, j, :odd, j, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
             if m != 0
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], sgrr, D_νo, j, D_νo, j, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], sgrt, νo, j, D_νo, j, ρ, M, Fi, Fo, P, fft_op=:derivative)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], dsgrt, D_νo, j, νo, j, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], dsgtt, νo, j, νo, j, ρ, M, Fi, Fo, P, fft_op = :derivative)
+                @views compute_element(Astar[Jos, Io + Ms], shot, :sin, m, :odd, j, :odd, j, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
             end
 
             # T[je, je]
             Ie = Je
-            @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], cgrr, D_νe, j, D_νe, j, ρ, M, Fi, Fo, P)
-            @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], cgrt, νe, j, D_νe, j, ρ, M, Fi, Fo, P, fft_op=:derivative)
-            @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], dcgrt, D_νe, j, νe, j, ρ, M, Fi, Fo, P)
-            @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], dcgtt, νe, j, νe, j, ρ, M, Fi, Fo, P, fft_op = :derivative)
+            @views compute_element(Astar[Jes, Ie + Mc], shot, :cos, m, :even, j, :even, j, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
             if m != 0
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], sgrr, D_νe, j, D_νe, j, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], sgrt, νe, j, D_νe, j, ρ, M, Fi, Fo, P, fft_op=:derivative)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], dsgrt, D_νe, j, νe, j, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], dsgtt, νe, j, νe, j, ρ, M, Fi, Fo, P, fft_op = :derivative)
+                @views compute_element(Astar[Jes, Ie + Ms], shot, :sin, m, :even, j, :even, j, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
             end
 
             # Boundary term [νj gρt νi]_0^1, non-zero for νj even and νi even
             # sign flipped to account for later reversal
             if j == 1
                 # ρ=0
-                @views fourier_decompose!(Astar[Jes, Ie + Mc], θ ->  dcgrt(0.0, θ), M, Fi, Fo, P)
+                @views fourier_decompose!(Astar[Jes, Ie + Mc], θ ->  m * sin(m * θ) * gρθ(shot, 0.0, θ), M, Fi, Fo, P)
                 if m != 0
-                    @views fourier_decompose!(Astar[Jes, Ie + Ms], θ ->  dsgrt(0.0, θ), M, Fi, Fo, P)
+                    @views fourier_decompose!(Astar[Jes, Ie + Ms], θ ->  -m * cos(m * θ) * gρθ(shot, 0.0, θ), M, Fi, Fo, P)
                 end
             elseif j == N
                 # ρ=1
-                @views fourier_decompose!(Astar[Jes, Ie + Mc], θ -> -dcgrt(1.0, θ), M, Fi, Fo, P)
+                @views fourier_decompose!(Astar[Jes, Ie + Mc], θ -> -m * sin(m * θ) * gρθ(shot, 1.0, θ), M, Fi, Fo, P)
                 if m != 0
-                    @views fourier_decompose!(Astar[Jes, Ie + Ms], θ -> -dsgrt(1.0, θ), M, Fi, Fo, P)
+                    @views fourier_decompose!(Astar[Jes, Ie + Ms], θ -> m * cos(m * θ) * gρθ(shot, 1.0, θ), M, Fi, Fo, P)
                 end
             end
 
             # T[jo, jo+1]
             Io = b2e(shot, jo+1)
-            @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], cgrr, D_νo, j, D_νe, j, ρ, M, Fi, Fo, P)
-            @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], cgrt, νo, j, D_νe, j, ρ, M, Fi, Fo, P, fft_op=:derivative)
-            @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], dcgrt, D_νo, j, νe, j, ρ, M, Fi, Fo, P)
-            @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], dcgtt, νo, j, νe, j, ρ, M, Fi, Fo, P, fft_op = :derivative)
+            @views compute_element(Astar[Jos, Io + Mc], shot, :cos, m, :odd, j, :even, j, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
             if m != 0
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], sgrr, D_νo, j, D_νe, j, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], sgrt, νo, j, D_νe, j, ρ, M, Fi, Fo, P, fft_op=:derivative)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], dsgrt, D_νo, j, νe, j, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], dsgtt, νo, j, νe, j, ρ, M, Fi, Fo, P, fft_op = :derivative)
+                @views compute_element(Astar[Jos, Io + Ms], shot, :sin, m, :odd, j, :even, j, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
             end
 
             if j < length(ρ)
                 # T[je, je+1]
                 Ie = b2e(shot, je+1)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], cgrr, D_νe, j, D_νo, j+1, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], cgrt, νe, j, D_νo, j+1, ρ, M, Fi, Fo, P, fft_op=:derivative)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], dcgrt, D_νe, j, νo, j+1, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], dcgtt, νe, j, νo, j+1, ρ, M, Fi, Fo, P, fft_op = :derivative)
+                @views compute_element(Astar[Jes, Ie + Mc], shot, :cos, m, :even, j, :odd, j+1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
                 if m != 0
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], sgrr, D_νe, j, D_νo, j+1, ρ, M, Fi, Fo, P)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], sgrt, νe, j, D_νo, j+1, ρ, M, Fi, Fo, P, fft_op=:derivative)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], dsgrt, D_νe, j, νo, j+1, ρ, M, Fi, Fo, P)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], dsgtt, νe, j, νo, j+1, ρ, M, Fi, Fo, P, fft_op = :derivative)
+                    @views compute_element(Astar[Jes, Ie + Ms], shot, :sin, m, :even, j, :odd, j+1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
                 end
 
                 # T[jo, jo+2]
                 Io = b2e(shot, jo+2)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], cgrr, D_νo, j, D_νo, j+1, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], cgrt, νo, j, D_νo, j+1, ρ, M, Fi, Fo, P, fft_op=:derivative)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], dcgrt, D_νo, j, νo, j+1, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], dcgtt, νo, j, νo, j+1, ρ, M, Fi, Fo, P, fft_op = :derivative)
+                @views compute_element(Astar[Jos, Io + Mc], shot, :cos, m, :odd, j, :odd, j+1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
                 if m != 0
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], sgrr, D_νo, j, D_νo, j+1, ρ, M, Fi, Fo, P)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], sgrt, νo, j, D_νo, j+1, ρ, M, Fi, Fo, P, fft_op=:derivative)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], dsgrt, D_νo, j, νo, j+1, ρ, M, Fi, Fo, P)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], dsgtt, νo, j, νo, j+1, ρ, M, Fi, Fo, P, fft_op = :derivative)
+                    @views compute_element(Astar[Jos, Io + Ms], shot, :sin, m, :odd, j, :odd, j+1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
                 end
 
                 # T[je, je+2]
                 Ie = b2e(shot, je+2)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], cgrr, D_νe, j, D_νe, j+1, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], cgrt, νe, j, D_νe, j+1, ρ, M, Fi, Fo, P, fft_op=:derivative)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], dcgrt, D_νe, j, νe, j+1, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Mc], dcgtt, νe, j, νe, j+1, ρ, M, Fi, Fo, P, fft_op = :derivative)
+                @views compute_element(Astar[Jes, Ie + Mc], shot, :cos, m, :even, j, :even, j+1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
                 if m != 0
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], sgrr, D_νe, j, D_νe, j+1, ρ, M, Fi, Fo, P)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], sgrt, νe, j, D_νe, j+1, ρ, M, Fi, Fo, P, fft_op=:derivative)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], dsgrt, D_νe, j, νe, j+1, ρ, M, Fi, Fo, P)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jes, Ie + Ms], dsgtt, νe, j, νe, j+1, ρ, M, Fi, Fo, P, fft_op = :derivative)
+                    @views compute_element(Astar[Jes, Ie + Ms], shot, :sin, m, :even, j, :even, j+1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
                 end
 
                 # T[jo, jo+3]
                 Io = b2e(shot, jo+3)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], cgrr, D_νo, j, D_νe, j+1, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], cgrt, νo, j, D_νe, j+1, ρ, M, Fi, Fo, P, fft_op=:derivative)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], dcgrt, D_νo, j, νe, j+1, ρ, M, Fi, Fo, P)
-                @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Mc], dcgtt, νo, j, νe, j+1, ρ, M, Fi, Fo, P, fft_op = :derivative)
+                @views compute_element(Astar[Jos, Io + Mc], shot, :cos, m, :odd, j, :even, j+1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
                 if m != 0
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], sgrr, D_νo, j, D_νe, j+1, ρ, M, Fi, Fo, P)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], sgrt, νo, j, D_νe, j+1, ρ, M, Fi, Fo, P, fft_op=:derivative)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], dsgrt, D_νo, j, νe, j+1, ρ, M, Fi, Fo, P)
-                    @views θFD_ρIP_f_nu_nu!(Astar[Jos, Io + Ms], dsgtt, νo, j, νe, j+1, ρ, M, Fi, Fo, P, fft_op = :derivative)
+                    @views compute_element(Astar[Jos, Io + Ms], shot, :sin, m, :odd, j, :even, j+1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
                 end
 
                 # T[je, je+3] does not exist
@@ -391,7 +289,7 @@ end
 
 function define_B!(B, shot)
 
-    Fi, Fo, P = fft_prealloc(shot.M)
+    Fi, dFi, Fo, P = fft_prealloc(shot.M)
     define_B!(B, shot, Fi, Fo, P)
     return
 end

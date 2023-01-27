@@ -16,7 +16,7 @@ function solve(shot, its)
         #ldiv!(C, Alu, B)
         C = A \ B
         shotit.C .= transpose(reshape(C, (2*shotit.M + 1, 2*shotit.N)))
-        Raxis, Zaxis, Ψaxis = find_axis(shotit)
+        _, _, Ψaxis = find_axis(shotit)
         # Define some approximate Psi contours
         levels = Ψaxis .* (1.0 .- shotit.ρ.^2)
         shotit = refit(shotit, levels)

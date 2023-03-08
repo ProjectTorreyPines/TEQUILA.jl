@@ -113,7 +113,7 @@ end
 
 function Shot(N :: Integer, M :: Integer, MXH_modes::Integer, filename::String)
 
-    g = Equilibrium.readg(filename)
+    g = MXHEquilibrium.readg(filename)
     cc_in = identify_cocos(g, clockwise_phi=false)[1]
     g = transform_cocos(g, cc_in, 11)
     Ψ = efit(g, 11)

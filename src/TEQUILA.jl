@@ -11,7 +11,7 @@ using Optim
 import LineSearches
 using SparseArrays
 using Contour
-import Equilibrium: identify_cocos, transform_cocos, efit, Equilibrium
+import MXHEquilibrium: identify_cocos, transform_cocos, efit, MXHEquilibrium
 #using Memoize
 
 const halfpi = 0.5 * π

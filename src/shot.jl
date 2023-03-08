@@ -121,7 +121,7 @@ function Shot(N :: Integer, M :: Integer, MXH_modes::Integer, filename::String)
     # boundary
     Rbnd = g.rbbbs
     Zbnd = g.zbbbs
-    bnd = MXH(Rbnd, Zbnd, MXH_modes)
+    bnd = MXH(Rbnd, Zbnd, MXH_modes; optimize_fit=true)
 
     # Fill a Shot with surfaces concentric to bnd
     return Shot(N, M, bnd, Ψ);

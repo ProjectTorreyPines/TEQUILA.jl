@@ -121,7 +121,7 @@ function refit(shot::Shot, lvls::AbstractVector{<:Real})#; inner_optimizer::Opti
     Fm = similar(pr)
 
     surfaces = deepcopy(shot.surfaces)
-    @views for (k, cl) in enumerate(levels(cntrs))
+    for (k, cl) in enumerate(levels(cntrs))
         l = first(lines(cl))
         Nl = length(l.vertices)
         @views coordinates!(pr[1:Nl], pz[1:Nl], l)
@@ -134,6 +134,7 @@ function refit(shot::Shot, lvls::AbstractVector{<:Real})#; inner_optimizer::Opti
         #MXH!(mxh, pr, pz; θ, Δθᵣ, dθ, Fm)
         #@views flat_coeffs!(surfaces[:, k+1], mxh)
         @views fit_flattened!(surfaces[:, k+1], pr[1:Nl], pz[1:Nl], θ[1:Nl], Δθᵣ[1:Nl], dθ[1:Nl], Fm[1:Nl])
+        optimize_fit!(surfaces[:, k+1], pr[1:Nl], pz[1:Nl])
     end
 
     # Allocate initial guess and bounds

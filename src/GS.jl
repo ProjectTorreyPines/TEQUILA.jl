@@ -280,23 +280,51 @@ function define_Astar!(Astar, shot, Fi, dFi, Fo, P)
     return
 end
 
-function define_B(shot)
+function define_B(shot, dp_dψ, f_df_dψ)
     L = 2 * shot.N * (2 * shot.M + 1)
     B = zeros(L)
-    define_B!(B, shot)
+    define_B!(B, shot, dp_dψ, f_df_dψ)
     return B
 end
 
-function define_B!(B, shot)
+function define_B!(B, shot, dp_dψ, f_df_dψ)
 
     Fi, dFi, Fo, P = fft_prealloc(shot.M)
-    define_B!(B, shot, Fi, Fo, P)
+    define_B!(B, shot, dp_dψ, f_df_dψ, Fi, Fo, P)
+    return
+end
+
+function define_B!(B, shot, dp_dψ, f_df_dψ, Fi, Fo, P)
+    N = shot.N
+    M = shot.M
+    ρ = shot.ρ
+
+    B .= 0.0
+
+    mrange = 0:2M
+
+    rhs(x, t) = RHS(shot, x, t, dp_dψ, f_df_dψ)
+
+    # Loop over columns of
+    for j in 1:N
+        je = 2j
+        jo = je - 1
+        # element row
+        Jo = b2e(shot, jo)
+        Je = b2e(shot, je)
+        Jos = Jo .+ mrange
+        Jes = Je .+ mrange
+
+        @views θFD_ρIP_f_nu!(B[Jos], rhs, νo, j, ρ, M, Fi, Fo, P)
+        @views θFD_ρIP_f_nu!(B[Jes], rhs, νe, j, ρ, M, Fi, Fo, P)
+
+    end
     return
 end
 
 function RHS(shot::Shot, ρ::Real, θ::Real, dp_dψ, f_df_dψ)
-    pprime = dp_dψ(ρ, θ)
-    ffprim = f_df_dψ(ρ, θ)
+    pprime = dp_dψ(ρ)
+    ffprim = f_df_dψ(ρ)
     return RHS(shot, ρ, θ, pprime, ffprim)
 end
 
@@ -325,35 +353,6 @@ function RHS(shot::Shot, ρ::Real, θ::Real, dp_dψ::Real, f_df_dψ::Real)
     return -twopi^2 * (pterm + ffterm)
 end
 
-function define_B!(B, shot, Fi, Fo, P)
-    N = shot.N
-    M = shot.M
-    ρ = shot.ρ
-
-    B .= 0.0
-
-    mrange = 0:2M
-    dp_dψ   = -4.5e4 #-0.1 / μ₀
-    f_df_dψ = -3e-2  #-shot.R0fe(1.0)^2
-
-    rhs(x, t) = RHS(shot, x, t, dp_dψ, f_df_dψ)
-
-    # Loop over columns of
-    for j in 1:N
-        je = 2j
-        jo = je - 1
-        # element row
-        Jo = b2e(shot, jo)
-        Je = b2e(shot, je)
-        Jos = Jo .+ mrange
-        Jes = Je .+ mrange
-
-        @views θFD_ρIP_f_nu!(B[Jos], rhs, νo, j, ρ, M, Fi, Fo, P)
-        @views θFD_ρIP_f_nu!(B[Jes], rhs, νe, j, ρ, M, Fi, Fo, P)
-
-    end
-    return
-end
 
 function set_bc!(shot::Shot, Astar::AbstractMatrix{<:Real}, b::AbstractVector{<:Real})
 

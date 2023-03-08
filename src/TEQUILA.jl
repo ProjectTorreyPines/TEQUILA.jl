@@ -11,7 +11,7 @@ using Optim
 import LineSearches
 using SparseArrays
 using Contour
-import Equilibrium: identify_cocos, transform_cocos, efit, Equilibrium
+import MXHEquilibrium: identify_cocos, transform_cocos, efit, MXHEquilibrium
 #using Memoize
 
 const halfpi = 0.5 * π
@@ -20,7 +20,7 @@ const μ₀ = 4e-7*π
 const lower_2 = zeros(2)
 const upper_2 = zeros(2)
 const x0_2 = zeros(2)
-const Ncntr = 201
+const Ncntr = 801
 const Ψcntr = zeros(Ncntr, Ncntr)
 
 include("initialize.jl")

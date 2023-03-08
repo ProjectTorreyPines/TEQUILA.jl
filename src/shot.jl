@@ -113,7 +113,7 @@ end
 
 function Shot(N :: Integer, M :: Integer, MXH_modes::Integer, filename::String)
 
-    g = Equilibrium.readg(filename)
+    g = MXHEquilibrium.readg(filename)
     cc_in = identify_cocos(g, clockwise_phi=false)[1]
     g = transform_cocos(g, cc_in, 11)
     Ψ = efit(g, 11)
@@ -121,7 +121,7 @@ function Shot(N :: Integer, M :: Integer, MXH_modes::Integer, filename::String)
     # boundary
     Rbnd = g.rbbbs
     Zbnd = g.zbbbs
-    bnd = MXH(Rbnd, Zbnd, MXH_modes)
+    bnd = MXH(Rbnd, Zbnd, MXH_modes; optimize_fit=true)
 
     # Fill a Shot with surfaces concentric to bnd
     return Shot(N, M, bnd, Ψ);

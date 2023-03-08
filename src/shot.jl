@@ -93,6 +93,25 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ; zero_boundary=fal
     return Shot(N, M, ρ, surfaces, C, S_FE...)
 end
 
+function Shot(N :: Integer, M :: Integer, boundary :: MXH)
+
+    ρ = range(0, 1, N)
+
+    L = length(boundary.c)
+    surfaces = zeros(5 + 2L, N)
+    Stmp = deepcopy(boundary)
+    for k in eachindex(ρ)
+        concentric_surface!(Stmp, ρ[k], boundary)
+        @views flat_coeffs!(surfaces[:, k], Stmp)
+    end
+
+    S_FE = surfaces_FE(ρ, surfaces)
+
+    C = zeros(2N, 2M+1)
+
+    return Shot(N, M, ρ, surfaces, C, S_FE...)
+end
+
 function Shot(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, surfaces::AbstractMatrix{<:Real},
               C::AbstractMatrix{<:Real}, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep,
               cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep})

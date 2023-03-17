@@ -181,49 +181,6 @@ function (shot::Shot)(r, z)
     return psi_ρθ(shot, ρ, θ)
 end
 
-function plot_shot(shot::Shot, axes=:rz; points=101)
-
-    p = plot()
-    if axes == :ρθ
-        xs = range(0, 1, points)
-        ys = range(0, twopi, points)
-        G = [psi_ρθ(shot, x, y) for y in ys, x in xs]
-       heatmap!(p, ys, xs, G', c=:viridis)
-       contour!(p, ys, xs, G', c=:white)
-       plot!(p, xlabel="θ", ylabel="ρ")
-    elseif axes == :rz
-
-        @views bnd = shot.surfaces[:, end]
-        R0 = bnd[1]
-        Z0 = bnd[2]
-        ϵ = bnd[3]
-        κ = bnd[4]
-        a = R0 * ϵ
-        Rmin = R0 - a
-        Rmax = R0 + a
-
-        Zmin = Z0 - a * κ
-        Zmax = Z0 + a * κ
-
-        xs = range(Rmin, Rmax, points)
-        ys = range(Zmin, Zmax, points)
-
-        G = zeros(points, points)
-        for (i,x) in enumerate(xs)
-            for (j,y) in enumerate(ys)
-                r, z = ρθ_RZ(shot, x, y)
-                if r == NaN
-                    G[j,i] = NaN
-                else
-                    G[j,i] = psi_ρθ(shot, r, z)
-                end
-            end
-        end
-        heatmap!(p, xs, ys, G, aspect_ratio=:equal)#, clim=(0,1))
-    end
-    return p
-end
-
 function find_axis(shot)
     R0 = shot.surfaces[1, 1]
     Z0 = shot.surfaces[2, 1]
@@ -239,4 +196,82 @@ function find_axis(Ψ, R0::Real, Z0::Real)
     Raxis, Zaxis = Optim.minimizer(S)
     Ψaxis = -psign * Optim.minimum(S)
     return (Raxis, Zaxis, Ψaxis)
+end
+
+@recipe function plot_shot(shot::Shot, axes::Symbol=:rz; points=101, contours=true)
+
+    if axes == :ρθ
+        #aspect_ratio --> true
+        ρs = range(0, 1, points)
+        θs = range(0, twopi, points)
+        xguide --> "θ"
+        yguide --> "ρ"
+        Ψ = [psi_ρθ(shot, ρ, θ) for ρ in ρs, θ in θs]
+
+        @series begin
+            seriestype --> :heatmap
+            c --> :viridis
+            θs, ρs, Ψ
+        end
+        if contours
+            @series begin
+                seriestype --> :contour
+                c --> :white
+                θs, ρs, Ψ
+            end
+        end
+    elseif axes == :rz
+        aspect_ratio --> :equal
+        @views bnd = shot.surfaces[:, end]
+        R0 = bnd[1]
+        Z0 = bnd[2]
+        ϵ = bnd[3]
+        κ = bnd[4]
+        a = R0 * ϵ
+        Rmin = R0 - a
+        Rmax = R0 + a
+
+        Zmin = Z0 - a * κ
+        Zmax = Z0 + a * κ
+
+        xlim --> (Rmin, Rmax)
+        ylim --> (Zmin, Zmax)
+
+        xs = range(Rmin, Rmax, points)
+        ys = range(Zmin, Zmax, points)
+
+        Ψ = zeros(points, points)
+        for (i,x) in enumerate(xs)
+            for (j,y) in enumerate(ys)
+                r, z = ρθ_RZ(shot, x, y)
+                if r == NaN
+                    Ψ[j,i] = NaN
+                else
+                    Ψ[j,i] = -psi_ρθ(shot, r, z)
+                end
+            end
+        end
+        cmap = sum(Ψ) > 0 ? :inferno : cgrad(:inferno, rev=true)
+        @series begin
+            seriestype --> :heatmap
+            c --> cmap
+            xs, ys, Ψ
+        end
+        if contours
+            @series begin
+                seriestype --> :contour
+                colorbar_entry --> false
+                linewidth --> 1
+                c --> :white
+                xs, ys, Ψ
+            end
+        end
+        @series begin
+            seriestype --> :path
+            linewidth --> 3
+            c --> :white
+            MXH(bnd)
+        end
+    end
+
 end

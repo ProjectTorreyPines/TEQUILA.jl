@@ -3,12 +3,11 @@ module TEQUILA
 
 using FiniteElementHermite
 using MillerExtendedHarmonic
-using Plots
+using RecipesBase
 using FFTW
 using LinearAlgebra
 using StaticArrays
 using Optim
-import LineSearches
 using SparseArrays
 using Contour
 import MXHEquilibrium: identify_cocos, transform_cocos, efit, MXHEquilibrium

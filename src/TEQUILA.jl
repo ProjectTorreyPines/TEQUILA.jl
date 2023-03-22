@@ -3,7 +3,6 @@ module TEQUILA
 
 using FiniteElementHermite
 using MillerExtendedHarmonic
-using RecipesBase
 using FFTW
 using LinearAlgebra
 using StaticArrays
@@ -11,6 +10,8 @@ using Optim
 using SparseArrays
 using Contour
 import MXHEquilibrium: identify_cocos, transform_cocos, efit, MXHEquilibrium
+using RecipesBase
+import PlotUtils: cgrad
 #using Memoize
 
 const halfpi = 0.5 * π

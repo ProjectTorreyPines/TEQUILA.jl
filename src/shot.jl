@@ -247,7 +247,7 @@ end
                 if r == NaN
                     Ψ[j,i] = NaN
                 else
-                    Ψ[j,i] = -psi_ρθ(shot, r, z)
+                    Ψ[j,i] = psi_ρθ(shot, r, z)
                 end
             end
         end

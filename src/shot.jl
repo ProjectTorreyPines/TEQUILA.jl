@@ -95,7 +95,7 @@ end
 
 function Shot(N :: Integer, M :: Integer, boundary :: MXH)
 
-    ρ = range(0, 1, N)
+    ρ = sqrt.(range(0, 1, N))
 
     L = length(boundary.c)
     surfaces = zeros(5 + 2L, N)

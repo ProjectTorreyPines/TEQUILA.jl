@@ -280,21 +280,22 @@ function define_Astar!(Astar, shot, Fi, dFi, Fo, P)
     return
 end
 
-function define_B(shot, dp_dψ, f_df_dψ)
+function define_B(shot, dp_dψ=nothing, f_df_dψ=nothing, Jt_R=nothing)
     L = 2 * shot.N * (2 * shot.M + 1)
     B = zeros(L)
-    define_B!(B, shot, dp_dψ, f_df_dψ)
+    define_B!(B, shot, dp_dψ, f_df_dψ, Jt_R)
     return B
 end
 
-function define_B!(B, shot, dp_dψ, f_df_dψ)
+function define_B!(B, shot, dp_dψ=nothing, f_df_dψ=nothing, Jt_R=nothing)
 
     Fi, dFi, Fo, P = fft_prealloc(shot.M)
-    define_B!(B, shot, dp_dψ, f_df_dψ, Fi, Fo, P)
+    define_B!(B, shot, Fi, Fo, P, dp_dψ, f_df_dψ, Jt_R)
     return
 end
 
-function define_B!(B, shot, dp_dψ, f_df_dψ, Fi, Fo, P)
+function define_B!(B, shot, Fi::AbstractVector{<:Complex}, Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan,
+                   dp_dψ=nothing, f_df_dψ=nothing, Jt_R=nothing)
     N = shot.N
     M = shot.M
     ρ = shot.ρ
@@ -303,7 +304,9 @@ function define_B!(B, shot, dp_dψ, f_df_dψ, Fi, Fo, P)
 
     mrange = 0:2M
 
-    rhs(x, t) = RHS(shot, x, t, dp_dψ, f_df_dψ)
+    invR2 = Jt_R === nothing ? nothing : FE_fsa(shot, fsa_invR2)
+
+    rhs(x, t) = RHS(shot, x, t, dp_dψ, f_df_dψ, Jt_R; invR2)
 
     # Loop over columns of
     for j in 1:N
@@ -322,13 +325,58 @@ function define_B!(B, shot, dp_dψ, f_df_dψ, Fi, Fo, P)
     return
 end
 
-function RHS(shot::Shot, ρ::Real, θ::Real, dp_dψ, f_df_dψ)
-    pprime = dp_dψ(ρ)
-    ffprim = f_df_dψ(ρ)
-    return RHS(shot, ρ, θ, pprime, ffprim)
+function RHS(shot::Shot, ρ::Real, θ::Real, dp_dψ::Nothing, f_df_dψ::Nothing, Jt_R::Nothing; invR2=nothing)
+    throw(ArgumentError("Must specify one pressure-related and one current-related flux function"))
 end
 
-function RHS(shot::Shot, ρ::Real, θ::Real, dp_dψ::Real, f_df_dψ::Real)
+function RHS(shot::Shot, ρ::Real, θ::Real, dp_dψ::Nothing, f_df_dψ, Jt_R; invR2=nothing)
+    throw(ArgumentError("Must specify one of the following: dp_dψ"))
+end
+
+function RHS(shot::Shot, ρ::Real, θ::Real, dp_dψ, f_df_dψ::Nothing, Jt_R::Nothing; invR2=nothing)
+    throw(ArgumentError("Must specify one of the following: f_df_dψ, Jt_R"))
+end
+
+function RHS(shot::Shot, ρ::Real, θ::Real, dp_dψ, f_df_dψ, Jt_R::Nothing; invR2=nothing)
+    pprime = dp_dψ(ρ)
+    ffprim = f_df_dψ(ρ)
+    return RHS_pp_ffp(shot, ρ, θ, pprime, ffprim)
+end
+
+function RHS(shot::Shot, ρ::Real, θ::Real, dp_dψ, f_df_dψ::Nothing, Jt_R; invR2=nothing)
+    pprime = dp_dψ(ρ)
+    JtoR = Jt_R(ρ)
+    iR2 = invR2(ρ)
+    return RHS_pp_jt(shot, ρ, θ, pprime, JtoR, iR2)
+end
+
+function RHS_pp_ffp(shot::Shot, ρ::Real, θ::Real, dp_dψ::Real, f_df_dψ::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
+    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ax = R0x * ϵx
+
+    k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_D_bases(shot.ρ, ρ)
+    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+
+    J = MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, shot._cx, shot._sx, dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx, shot._dsx)
+    R = MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, shot._cx, shot._sx, ax)
+
+    pterm  =  μ₀ * dp_dψ * J
+    ffterm = f_df_dψ * J / R^2
+
+    return -twopi^2 * (pterm + ffterm)
+end
+
+function RHS_pp_jt(shot::Shot, ρ::Real, θ::Real, dp_dψ::Real, JtoR::Real, iR2:: Real)
     k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
     R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
@@ -347,12 +395,12 @@ function RHS(shot::Shot, ρ::Real, θ::Real, dp_dψ::Real, f_df_dψ::Real)
     J = MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, shot._cx, shot._sx, dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx, shot._dsx)
     R = MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, shot._cx, shot._sx, ax)
 
-    pterm  =  μ₀ * dp_dψ * J
-    ffterm = f_df_dψ * J / R^2
+    pterm  = -twopi * (1.0 - 1.0 / (R^2 * iR2)) * dp_dψ * J
+    Jterm = JtoR * J / (R^2 * iR2)
 
-    return -twopi^2 * (pterm + ffterm)
+    return twopi * μ₀ * (pterm + Jterm)
+
 end
-
 
 function set_bc!(shot::Shot, Astar::AbstractMatrix{<:Real}, b::AbstractVector{<:Real})
 

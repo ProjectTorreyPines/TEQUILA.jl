@@ -1,4 +1,6 @@
-function solve(shot, dp_dψ, f_df_dψ, its)
+function solve(shot::Shot, its::Integer; dp_dψ=nothing, f_df_dψ=nothing, Jt_R=nothing)
+    @assert dp_dψ !== nothing
+    @assert (f_df_dψ !== nothing) ⊻ (Jt_R !== nothing)
     shotit = deepcopy(shot)
     Fi, dFi, Fo, P = fft_prealloc(shotit.M)
     A = preallocate_Astar(shotit)
@@ -8,7 +10,7 @@ function solve(shot, dp_dψ, f_df_dψ, its)
     
     for i in 1:its
         define_Astar!(A, shotit, Fi, dFi, Fo, P)
-        define_B!(B, shotit, dp_dψ, f_df_dψ, Fi, Fo, P)
+        define_B!(B, shotit, Fi, Fo, P, dp_dψ, f_df_dψ, Jt_R)
         set_bc!(shotit, A, B)
         
         C = A \ B

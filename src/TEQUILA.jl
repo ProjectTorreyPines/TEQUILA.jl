@@ -9,7 +9,7 @@ using StaticArrays
 using Optim
 using SparseArrays
 using Contour
-import MXHEquilibrium: identify_cocos, transform_cocos, efit, MXHEquilibrium
+import MXHEquilibrium: identify_cocos, transform_cocos, efit, AbstractEquilibrium, MXHEquilibrium
 using RecipesBase
 import PlotUtils: cgrad
 #using Memoize

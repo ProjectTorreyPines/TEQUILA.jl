@@ -280,22 +280,21 @@ function define_Astar!(Astar, shot, Fi, dFi, Fo, P)
     return
 end
 
-function define_B(shot, dp_dψ=nothing, f_df_dψ=nothing, Jt_R=nothing)
+function define_B(shot)
     L = 2 * shot.N * (2 * shot.M + 1)
     B = zeros(L)
-    define_B!(B, shot, dp_dψ, f_df_dψ, Jt_R)
+    define_B!(B, shot)
     return B
 end
 
-function define_B!(B, shot, dp_dψ=nothing, f_df_dψ=nothing, Jt_R=nothing)
+function define_B!(B, shot)
 
     Fi, dFi, Fo, P = fft_prealloc(shot.M)
-    define_B!(B, shot, Fi, Fo, P, dp_dψ, f_df_dψ, Jt_R)
+    define_B!(B, shot, Fi, Fo, P)
     return
 end
 
-function define_B!(B, shot, Fi::AbstractVector{<:Complex}, Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan,
-                   dp_dψ=nothing, f_df_dψ=nothing, Jt_R=nothing)
+function define_B!(B, shot, Fi::AbstractVector{<:Complex}, Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan)
     N = shot.N
     M = shot.M
     ρ = shot.ρ
@@ -304,9 +303,9 @@ function define_B!(B, shot, Fi::AbstractVector{<:Complex}, Fo::AbstractVector{<:
 
     mrange = 0:2M
 
-    invR2 = Jt_R === nothing ? nothing : FE_fsa(shot, fsa_invR2)
+    invR2 = shot.Jt_R === nothing ? nothing : FE_fsa(shot, fsa_invR2)
 
-    rhs(x, t) = RHS(shot, x, t, dp_dψ, f_df_dψ, Jt_R; invR2)
+    rhs(x, t) = RHS(shot, x, t; invR2)
 
     # Loop over columns of
     for j in 1:N
@@ -325,29 +324,20 @@ function define_B!(B, shot, Fi::AbstractVector{<:Complex}, Fo::AbstractVector{<:
     return
 end
 
-function RHS(shot::Shot, ρ::Real, θ::Real, dp_dψ::Nothing, f_df_dψ::Nothing, Jt_R::Nothing; invR2=nothing)
-    throw(ArgumentError("Must specify one pressure-related and one current-related flux function"))
-end
+function RHS(shot::Shot, ρ::Real, θ::Real; invR2=nothing)
+    shot.dp_dψ === nothing &&  throw(ErrorException("Must specify: dp_dψ"))
+    (shot.f_df_dψ === nothing && shot.Jt_R === nothing) && throw(ErrorException("Must specify one of the following: f_df_dψ, Jt_R"))
 
-function RHS(shot::Shot, ρ::Real, θ::Real, dp_dψ::Nothing, f_df_dψ, Jt_R; invR2=nothing)
-    throw(ArgumentError("Must specify one of the following: dp_dψ"))
-end
+    pprime = shot.dp_dψ(ρ)
 
-function RHS(shot::Shot, ρ::Real, θ::Real, dp_dψ, f_df_dψ::Nothing, Jt_R::Nothing; invR2=nothing)
-    throw(ArgumentError("Must specify one of the following: f_df_dψ, Jt_R"))
-end
-
-function RHS(shot::Shot, ρ::Real, θ::Real, dp_dψ, f_df_dψ, Jt_R::Nothing; invR2=nothing)
-    pprime = dp_dψ(ρ)
-    ffprim = f_df_dψ(ρ)
-    return RHS_pp_ffp(shot, ρ, θ, pprime, ffprim)
-end
-
-function RHS(shot::Shot, ρ::Real, θ::Real, dp_dψ, f_df_dψ::Nothing, Jt_R; invR2=nothing)
-    pprime = dp_dψ(ρ)
-    JtoR = Jt_R(ρ)
-    iR2 = invR2(ρ)
-    return RHS_pp_jt(shot, ρ, θ, pprime, JtoR, iR2)
+    if shot.f_df_dψ !== nothing
+        ffprim = shot.f_df_dψ(ρ)
+        return RHS_pp_ffp(shot, ρ, θ, pprime, ffprim)
+    else
+        JtoR = shot.Jt_R(ρ)
+        iR2 = invR2(ρ)
+        return RHS_pp_jt(shot, ρ, θ, pprime, JtoR, iR2)
+    end
 end
 
 function RHS_pp_ffp(shot::Shot, ρ::Real, θ::Real, dp_dψ::Real, f_df_dψ::Real)

@@ -58,7 +58,7 @@ end
 function FSA(f, shot::Shot, ρ::Real, Vprime::FE_rep)
 
     ρ == 0.0 && return f(0.0)
-    
+
     k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
     R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
@@ -75,7 +75,7 @@ function FSA(f, shot::Shot, ρ::Real, Vprime::FE_rep)
 
     Vp = evaluate_inbounds(Vprime, k, nu_ou, nu_eu, nu_ol, nu_el)
     Jf(θ) = f(θ) * MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, shot._cx, shot._sx, dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx, shot._dsx)
-    
+
     return twopi * trapa(Jf) / Vp
 end
 

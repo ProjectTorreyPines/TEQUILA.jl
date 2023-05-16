@@ -9,9 +9,10 @@ using StaticArrays
 using Optim
 using SparseArrays
 using Contour
-import MXHEquilibrium: identify_cocos, transform_cocos, efit, MXHEquilibrium
+import MXHEquilibrium: identify_cocos, transform_cocos, efit, AbstractEquilibrium, MXHEquilibrium
 using RecipesBase
 import PlotUtils: cgrad
+import QuadGK:quadgk
 #using Memoize
 
 const halfpi = 0.5 * π

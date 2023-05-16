@@ -242,6 +242,11 @@ function ρ(shot::Shot, psi)
     return sqrt(psin)
 end
 
+function ψ(shot::Shot, ρ)
+    psin = ρ ^ 2
+    return ψ₀(shot) * (1.0 - psin)
+end
+
 @recipe function plot_shot(shot::Shot, axes::Symbol=:rz; points=101, contours=true)
 
     if axes == :ρθ
@@ -424,15 +429,6 @@ function MXHEquilibrium.pressure(shot::Shot, psi)
     return shot.pbnd - quadgk(f, rho, 1.0)[1]
 end
 
-# Misnomer: "poloidal_current" is actually Fpol = R*Bt, so we'll rename
-function MXHEquilibrium.poloidal_current(shot::Shot, psi)
-    return Fpol(shot, psi)
-end
-
-function Fpol(shot::Shot, psi)
-    return Fpol(shot, FFprime(shot, shot.dp_dψ, shot.f_df_dψ, shot.Jt_R), psi)
-end
-
 function FFprime(shot::Shot, dp_dψ, f_df_dψ::Nothing, Jt_R::Nothing)
     throw(ErrorException("Must specify one of the following: f_df_dψ, Jt_R"))
 end
@@ -443,25 +439,39 @@ function FFprime(shot::Shot, dp_dψ, f_df_dψ::Nothing, Jt_R)
     return x -> -μ₀ * (dp_dψ(x) + Jt_R(x) / twopi) / fsa_invR2(shot, x)
 end
 
-function Fpol(shot::Shot, f_df_dψ, psi)
-    rho = ρ(shot, psi)
+function Fpol_dFpol_dψ(shot::Shot, ρ::Real)
+    ffp = FFprime(shot, shot.dp_dψ, shot.f_df_dψ, shot.Jt_R)
+    return ffp(ρ)
+end
+
+function Fpol(shot::Shot, ρ::Real)
+    return Fpol(shot, FFprime(shot, shot.dp_dψ, shot.f_df_dψ, shot.Jt_R), ρ)
+end
+
+function Fpol(shot::Shot, f_df_dψ, ρ::Real)
     f(x) = f_df_dψ(x) * dψ_dρ(shot, x)
-    half_dF2 = quadgk(f, rho, 1.0)[1]
+    half_dF2 = quadgk(f, ρ, 1.0)[1]
     F2 = shot.fbnd ^ 2 - 2.0 * half_dF2
     return sign(shot.fbnd) * sqrt(F2)
 end
 
 # Misnomer: "poloidal_current" is actually Fpol = R*Bt, so we'll rename
-function MXHEquilibrium.poloidal_current_gradient(shot::Shot, psi)
-    return dFpol_dψ(shot, psi)
+function MXHEquilibrium.poloidal_current(shot::Shot, psi)
+    rho = ρ(shot, psi)
+    return Fpol(shot, rho)
 end
 
-function dFpol_dψ(shot::Shot, psi)
-    rho = ρ(shot, psi)
+function dFpol_dψ(shot::Shot, ρ::Real)
     ffp = FFprime(shot, shot.dp_dψ, shot.f_df_dψ, shot.Jt_R)
-    FFp = ffp(rho)
-    Fp = (FFp == 0.0) ? 0.0 : FFp / Fpol(shot, ffp, psi)
+    FFp = ffp(ρ)
+    Fp = (FFp == 0.0) ? 0.0 : FFp / Fpol(shot, ffp, ρ)
     return Fp
+end
+
+# Misnomer: "poloidal_current" is actually Fpol = R*Bt, so we'll rename
+function MXHEquilibrium.poloidal_current_gradient(shot::Shot, psi::Real)
+    rho = ρ(shot, psi)
+    return dFpol_dψ(shot, rho)
 end
 
 MXHEquilibrium.cocos(shot::Shot) = MXHEquilibrium.cocos(11)

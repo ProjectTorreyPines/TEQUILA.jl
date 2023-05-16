@@ -1,13 +1,32 @@
-function solve(shot::Shot, its::Integer; dp_dψ=nothing, f_df_dψ=nothing, Jt_R=nothing, debug=false)
+function solve(shot::Shot, its::Integer;
+               dp_dψ=nothing, f_df_dψ=nothing, Jt_R=nothing, pbnd=nothing, fbnd=nothing, debug=false)
 
-    pprime = dp_dψ   !== nothing ? dp_dψ   : shot.dp_dψ
-    ffprim = f_df_dψ !== nothing ? f_df_dψ : shot.f_df_dψ
-    jtor   = Jt_R    !== nothing ? Jt_R    : shot.Jt_R
+    pprime = dp_dψ  !== nothing ? dp_dψ   : deepcopy(shot.dp_dψ)
+
+    ffprim = nothing
+    jtor   = nothing
+    if f_df_dψ !== nothing && Jt_r !== nothing
+        throw(ErrorException("Must specify only one of the following: f_df_dψ, Jt_R"))
+    elseif f_df_dψ !== nothing
+        ffprim = f_df_dψ
+        jtor = nothing
+    elseif Jt_R !== nothing
+        ffprim = nothing
+        jtor = Jt_R
+    else
+        ffprim = deepcopy(shot.f_df_dψ)
+        jtor = deepcopy(shot.Jt_R)
+    end
+
+    pb  = pbnd !== nothing ? pbnd : shot.pbnd
+    fb  = fbnd !== nothing ? fbnd : shot.fbnd
 
     @assert pprime !== nothing
     @assert (ffprim !== nothing) ⊻ (jtor !== nothing)
+    @assert pb !== nothing
+    @assert fb !== nothing
 
-    refill = Shot(shot, pprime, ffprim, jtor)
+    refill = Shot(shot; dp_dψ = pprime, f_df_dψ = ffprim, Jt_R = jtor, pbnd = pb, fbnd = fb)
     return solve!(refill, its; debug)
 end
 
@@ -28,6 +47,7 @@ function solve!(refill::Shot, its::Integer; debug=false)
 
         C = A \ B
         refill.C .= transpose(reshape(C, (2*refill.M + 1, 2*refill.N)))
+        refill.C[end, :] .= 0.0 #ensure psi=0 on boundary
         _, _, Ψaxis = find_axis(refill)
 
         # Using ρ = rho poloidal (sqrt((Ψ-Ψaxis)/sqrt(Ψbnd-Ψaxis)))

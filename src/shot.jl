@@ -1,7 +1,7 @@
 const ProfType = Union{Nothing, FE_rep, Function}
 
 mutable struct Shot{I1<:Integer, VR1<:AbstractVector{<:Real}, MR1<:AbstractMatrix{<:Real}, MR2<:AbstractMatrix{<:Real},
-                    PT1<:ProfType, PT2<:ProfType, PT3<:ProfType,
+                    PT1<:ProfType, PT2<:ProfType, PT3<:ProfType, R1<:Real, R2<:Real,
                     FE1<:FE_rep, VFE1<:AbstractVector{<:FE_rep}, VR2<:AbstractVector{<:Real}, F1<:Factorization}  <: AbstractEquilibrium
     N :: I1
     M :: I1
@@ -11,6 +11,8 @@ mutable struct Shot{I1<:Integer, VR1<:AbstractVector{<:Real}, MR1<:AbstractMatri
     dp_dψ :: PT1
     f_df_dψ :: PT2
     Jt_R :: PT3
+    pbnd :: R1
+    fbnd :: R2
     R0fe::FE1
     Z0fe::FE1
     ϵfe::FE1
@@ -42,22 +44,25 @@ function compute_Cmatrix!(C::AbstractMatrix{<:Real}, N :: Integer, M :: Integer,
         @views θFD_ρIP_f_nu!(C[2j  , :], Ψ_ρθ, νe, j, ρ, M, Fi, Fo, P)
     end
     ldiv!(Afac, C)
+    C[end,:] .= 0.0 # Ensures psi=0 on boundary
     return C
 end
 
 function Shot(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, surfaces :: AbstractVector{<:MXH}, Ψ;
-              dp_dψ::ProfType=nothing, f_df_dψ::ProfType=nothing, Jt_R::ProfType=nothing, zero_boundary=false)
+              dp_dψ::ProfType=nothing, f_df_dψ::ProfType=nothing, Jt_R::ProfType=nothing,
+              pbnd::Real=0.0, fbnd::Real=10.0, zero_boundary=false)
     @assert length(surfaces) == N
     L = length(surfaces[1].c)
     S = zeros(5+2L, N)
     for (k, mxh) in enumerate(surfaces)
        @views flat_coeffs!(S[:, k], mxh)
     end
-    Shot(N, M, ρ, S, Ψ; dp_dψ, f_df_dψ, Jt_R, zero_boundary)
+    Shot(N, M, ρ, S, Ψ; dp_dψ, f_df_dψ, Jt_R, pbnd, fbnd, zero_boundary)
 end
 
 function Shot(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, surfaces :: AbstractMatrix{<:Real}, Ψ;
-              dp_dψ::ProfType=nothing, f_df_dψ::ProfType=nothing, Jt_R::ProfType=nothing, zero_boundary=false)
+              dp_dψ::ProfType=nothing, f_df_dψ::ProfType=nothing, Jt_R::ProfType=nothing,
+              pbnd::Real=0.0, fbnd::Real=10.0, zero_boundary=false)
 
     S_FE = surfaces_FE(ρ, surfaces)
 
@@ -68,10 +73,12 @@ function Shot(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, surfaces
 
     C = compute_Cmatrix(N, M, ρ, Ψ_ρθ)
 
-    return Shot(N, M, ρ, surfaces, C, S_FE...; dp_dψ, f_df_dψ, Jt_R)
+    return Shot(N, M, ρ, surfaces, C, S_FE...; dp_dψ, f_df_dψ, Jt_R, pbnd, fbnd)
 end
 
-function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ; dp_dψ::ProfType=nothing, f_df_dψ::ProfType=nothing, Jt_R::ProfType=nothing, zero_boundary=false)
+function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ;
+              dp_dψ::ProfType=nothing, f_df_dψ::ProfType=nothing, Jt_R::ProfType=nothing,
+              pbnd::Real=0.0, fbnd::Real=10.0, zero_boundary=false)
 
     ρ = range(0, 1, N)
 
@@ -96,10 +103,12 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ; dp_dψ::ProfType=
 
     C = compute_Cmatrix(N, M, ρ, Ψ_ρθ)
 
-    return Shot(N, M, ρ, surfaces, C, S_FE...; dp_dψ, f_df_dψ, Jt_R)
+    return Shot(N, M, ρ, surfaces, C, S_FE...; dp_dψ, f_df_dψ, Jt_R, pbnd, fbnd)
 end
 
-function Shot(N :: Integer, M :: Integer, boundary :: MXH; dp_dψ::ProfType=nothing, f_df_dψ::ProfType=nothing, Jt_R::ProfType=nothing)
+function Shot(N :: Integer, M :: Integer, boundary :: MXH;
+             dp_dψ::ProfType=nothing, f_df_dψ::ProfType=nothing, Jt_R::ProfType=nothing,
+             pbnd::Real=0.0, fbnd::Real=10.0)
 
     ρ = sqrt.(range(0, 1, N))
 
@@ -115,26 +124,29 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH; dp_dψ::ProfType=noth
 
     C = zeros(2N, 2M+1)
 
-    return Shot(N, M, ρ, surfaces, C, S_FE...; dp_dψ, f_df_dψ, Jt_R)
+    return Shot(N, M, ρ, surfaces, C, S_FE...; dp_dψ, f_df_dψ, Jt_R, pbnd, fbnd)
 end
 
 function Shot(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, surfaces::AbstractMatrix{<:Real},
               C::AbstractMatrix{<:Real}, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep,
-              cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep}; dp_dψ::ProfType=nothing, f_df_dψ::ProfType=nothing, Jt_R::ProfType=nothing)
+              cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep};
+              dp_dψ::ProfType=nothing, f_df_dψ::ProfType=nothing, Jt_R::ProfType=nothing,
+              pbnd::Real=0.0, fbnd::Real=10.0)
     Afac = factorize(mass_matrix(N, ρ))
-    return Shot(N, M, ρ, surfaces, C, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, Afac; dp_dψ, f_df_dψ, Jt_R)
+    return Shot(N, M, ρ, surfaces, C, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, Afac; dp_dψ, f_df_dψ, Jt_R, pbnd, fbnd)
 end
 
 function Shot(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, surfaces::AbstractMatrix{<:Real},
               C::AbstractMatrix{<:Real}, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep,
               cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep}, Afac::Factorization;
-              dp_dψ::ProfType=nothing, f_df_dψ::ProfType=nothing, Jt_R::ProfType=nothing)
+              dp_dψ::ProfType=nothing, f_df_dψ::ProfType=nothing, Jt_R::ProfType=nothing, pbnd::Real=0.0, fbnd::Real=10.0)
     L = length(cfe)
     cx = zeros(L)
     sx = zeros(L)
     dcx = zeros(L)
     dsx = zeros(L)
-    Shot(N, M, ρ, surfaces, C, dp_dψ, f_df_dψ, Jt_R, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, cx, sx, dcx, dsx, Afac)
+    Shot(N, M, ρ, surfaces, C, dp_dψ, f_df_dψ, Jt_R, pbnd, fbnd,
+         R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, cx, sx, dcx, dsx, Afac)
 end
 
 function Shot(N :: Integer, M :: Integer, MXH_modes::Integer, filename::String)
@@ -148,15 +160,24 @@ function Shot(N :: Integer, M :: Integer, MXH_modes::Integer, filename::String)
     Rbnd = g.rbbbs
     Zbnd = g.zbbbs
     bnd = MXH(Rbnd, Zbnd, MXH_modes; optimize_fit=true)
+    pbnd = g.pres[end]
+    fbnd = g.fpol[end]
+
+    # profiles
+    rho = sqrt.((g.psi .- g.simag) ./ (g.sibry - g.simag))
+    dp_dψ = FE(rho, g.pprime)
+    f_df_dψ = FE(rho, g.ffprim)
 
     # Fill a Shot with surfaces concentric to bnd
-    return Shot(N, M, bnd, Ψ);
+    return Shot(N, M, bnd, Ψ; dp_dψ, f_df_dψ, pbnd, fbnd)
 end
 
-function Shot(shot, dp_dψ::ProfType, f_df_dψ::ProfType, Jt_R::ProfType)
-    return Shot(shot.N, shot.M, shot.ρ, shot.surfaces, shot.C, dp_dψ, f_df_dψ, Jt_R,
-                shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe, shot.cfe, shot.sfe,
-                shot._cx, shot._sx, shot._dcx, shot._dsx, shot._Afac)
+function Shot(shot; dp_dψ::ProfType=deepcopy(shot.dp_dψ), f_df_dψ::ProfType=deepcopy(shot.f_df_dψ),
+              Jt_R::ProfType=deepcopy(shot.Jt_R), pbnd::Real=shot.pbnd, fbnd::Real=shot.fbnd)
+    return Shot(shot.N, shot.M, deepcopy(shot.ρ), deepcopy(shot.surfaces), deepcopy(shot.C),
+                deepcopy(shot.R0fe), deepcopy(shot.Z0fe), deepcopy(shot.ϵfe), deepcopy(shot.κfe),
+                deepcopy(shot.c0fe), deepcopy(shot.cfe), deepcopy(shot.sfe);
+                dp_dψ, f_df_dψ, Jt_R, pbnd, fbnd)
 end
 
 
@@ -204,6 +225,7 @@ end
 function find_axis(Ψ, R0::Real, Z0::Real)
     psign = sign(Ψ(R0, Z0))
     f(x) = -psign * Ψ(x[1], x[2])
+
     x0_2[1] = R0
     x0_2[2] = Z0
     S = Optim.optimize(f, x0_2, Optim.NelderMead())
@@ -212,10 +234,11 @@ function find_axis(Ψ, R0::Real, Z0::Real)
     return (Raxis, Zaxis, Ψaxis)
 end
 
-Ψ₀(shot::Shot) = shot.C[2,1]
+ψ₀(shot::Shot) = shot.C[2,1]
+dψ_dρ(shot::Shot, ρ) = -2.0 * ρ * ψ₀(shot)
 
 function ρ(shot::Shot, psi)
-    psin = 1.0 - psi / Ψ₀(shot)
+    psin = 1.0 - psi / ψ₀(shot)
     return sqrt(psin)
 end
 
@@ -244,7 +267,8 @@ end
     elseif axes == :rz
         aspect_ratio --> :equal
 
-        Rext, Zext = limits(shot)
+        bnd = shot.surfaces[:, end]
+        Rext, Zext = MXHEquilibrium.limits(shot)
         Rmin, Rmax = Rext
         Zmin, Zmax = Zext
 
@@ -292,9 +316,10 @@ end
 
 
 # Implement AbstractEquilibrium interface
+# This assume it's converged, so the inner flux surface is the axis
 function MXHEquilibrium.magnetic_axis(shot::Shot)
-    Raxis, Zaxis, _ = find_axis(shot)
-    return Raxis, Zaxis
+    @views axis = shot.surfaces[:, 1]
+    return axis[1], axis[2]
 end
 
 function MXHEquilibrium.limits(shot::Shot)
@@ -312,8 +337,7 @@ function MXHEquilibrium.limits(shot::Shot)
 end
 
 function MXHEquilibrium.psi_limits(shot::Shot)
-    _, _, Ψaxis = find_axis(shot)
-    return Ψaxis, 0.0
+    return ψ₀(shot), 0.0
 end
 
 function dpsi_dρ(shot::Shot, ρ, θ, D_bases = compute_D_bases(shot.ρ, ρ))
@@ -389,22 +413,68 @@ MXHEquilibrium.electric_potential(shot::Shot, psi) = 0.0
 
 MXHEquilibrium.electric_potential_gradient(shot::Shot, psi) = 0.0
 
+function MXHEquilibrium.pressure_gradient(shot::Shot, psi)
+    rho = ρ(shot, psi)
+    return shot.dp_dψ(rho)
+end
+
 function MXHEquilibrium.pressure(shot::Shot, psi)
     rho = ρ(shot, psi)
+    f(x) = shot.dp_dψ(x) * dψ_dρ(shot, x)
+    return shot.pbnd - quadgk(f, rho, 1.0)[1]
 end
 
+# Misnomer: "poloidal_current" is actually Fpol = R*Bt, so we'll rename
 function MXHEquilibrium.poloidal_current(shot::Shot, psi)
+    return Fpol(shot, psi)
 end
 
-function MXHEquilibrium.pressure_gradient(shot::Shot, psi)
+function Fpol(shot::Shot, psi)
+    return Fpol(shot, FFprime(shot, shot.dp_dψ, shot.f_df_dψ, shot.Jt_R), psi)
 end
 
+function FFprime(shot::Shot, dp_dψ, f_df_dψ::Nothing, Jt_R::Nothing)
+    throw(ErrorException("Must specify one of the following: f_df_dψ, Jt_R"))
+end
+
+FFprime(shot::Shot, dp_dψ, f_df_dψ, Jt_R::Nothing) = f_df_dψ
+
+function FFprime(shot::Shot, dp_dψ, f_df_dψ::Nothing, Jt_R)
+    return x -> -μ₀ * (dp_dψ(x) + Jt_R(x) / twopi) / fsa_invR2(shot, x)
+end
+
+function Fpol(shot::Shot, f_df_dψ, psi)
+    rho = ρ(shot, psi)
+    f(x) = f_df_dψ(x) * dψ_dρ(shot, x)
+    half_dF2 = quadgk(f, rho, 1.0)[1]
+    F2 = shot.fbnd ^ 2 - 2.0 * half_dF2
+    return sign(shot.fbnd) * sqrt(F2)
+end
+
+# Misnomer: "poloidal_current" is actually Fpol = R*Bt, so we'll rename
 function MXHEquilibrium.poloidal_current_gradient(shot::Shot, psi)
+    return dFpol_dψ(shot, psi)
+end
+
+function dFpol_dψ(shot::Shot, psi)
+    rho = ρ(shot, psi)
+    ffp = FFprime(shot, shot.dp_dψ, shot.f_df_dψ, shot.Jt_R)
+    FFp = ffp(rho)
+    Fp = (FFp == 0.0) ? 0.0 : FFp / Fpol(shot, ffp, psi)
+    return Fp
 end
 
 MXHEquilibrium.cocos(shot::Shot) = MXHEquilibrium.cocos(11)
 
 function MXHEquilibrium.B0Ip_sign(shot::Shot)
+    psi = 0.99 * ψ₀(shot)
+    signB0 = sign(Fpol(shot, psi))
+
+    sigma_Bp = cocos(shot).sigma_Bp
+    signIp = - sign(psi) / sigma_Bp
+
+    return signB0 * signIp
+
 end
 
-MXHEquilibrium.psi_boundary(shot::Shot) = 0.0
+MXHEquilibrium.psi_boundary(shot::Shot; kwargs...) = 0.0

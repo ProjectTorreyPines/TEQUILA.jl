@@ -156,7 +156,9 @@ function refit(shot::Shot, lvls::AbstractVector{<:Real})#; inner_optimizer::Opti
     @views surfaces[6:end, 1] .= 0.0
 
     #remap_shot!(shot, surfaces)
-    shot_refit = Shot(shot.N, shot.M, shot.ρ, surfaces, shot; dp_dψ=shot.dp_dψ, f_df_dψ=shot.f_df_dψ, Jt_R=shot.Jt_R)
+    shot_refit = Shot(shot.N, shot.M, shot.ρ, surfaces, shot;
+                      dp_dψ = shot.dp_dψ, f_df_dψ = shot.f_df_dψ, Jt_R = shot.Jt_R,
+                      pbnd = shot.pbnd, fbnd = shot.fbnd)
 
     return shot_refit
 end

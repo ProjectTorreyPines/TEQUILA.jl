@@ -21,7 +21,6 @@ function scale_surface!(surface::MXH, x::Real; Raxis::Real = surface.R0, Zaxis::
     return surface
 end
 
-
 function surfaces_FE(shot::Shot)
     surfaces_FE(shot.ρ, shot.surfaces)
 end
@@ -247,6 +246,17 @@ function evaluate_dcsx!(shot::Shot, k::Integer, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_
         shot._dsx[m] =  evaluate_inbounds(shot.sfe[m], k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     end
     return shot
+end
+
+function MillerExtendedHarmonic.MXH(shot::Shot, ρ::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
+    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    Z0x = evaluate_inbounds(shot.Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+    return MXH(R0x, Z0x, ϵx, κx, c0x, shot._cx, shot._sx)
 end
 
 

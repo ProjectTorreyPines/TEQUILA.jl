@@ -161,6 +161,14 @@ function compute_element(CS::AbstractVector{<:Real}, shot::Shot, Ftype::Symbol, 
     return dual_fourier_decompose!(CS, θ -> dual_ρIP(θ, shot, Ftype, m, nu1_type, k1, nu2_type, k2, ρ), M, Fi, dFi, Fo, P; reset_CS)
 end
 
+function int_ab(x, fa, ga, fb, gb, nu1, D_nu1, nu2, D_nu2)
+    Dn2 = D_nu2(x)
+    n2  = nu2(x)
+    I1 = D_nu1(x) * (fa * Dn2 + ga * n2)
+    I2 = nu1(x) * (fb * Dn2 + gb * n2)
+    return SVector(I1, I2)
+end
+
 function dual_ρIP(θ, shot, Ftype::Symbol, m::Integer, ν1_type::Symbol, k1, ν2_type::Symbol, k2, ρ)
 
     nu1(x)   = (ν1_type === :odd) ? νo(x, k1, ρ)   : νe(x, k1, ρ)
@@ -168,8 +176,8 @@ function dual_ρIP(θ, shot, Ftype::Symbol, m::Integer, ν1_type::Symbol, k1, ν
     nu2(x)   = (ν2_type === :odd) ? νo(x, k2, ρ)   : νe(x, k2, ρ)
     D_nu2(x) = (ν2_type === :odd) ? D_νo(x, k2, ρ) : D_νe(x, k2, ρ)
 
-    int1(x, f, g) = D_nu1(x) * (f * D_nu2(x) + g * nu2(x))
-    int2(x, f, g) = nu1(x) * (f * D_nu2(x) + g * nu2(x))
+    #int1(x, f, g) = D_nu1(x) * (f * D_nu2(x) + g * nu2(x))
+    #int2(x, f, g) = nu1(x) * (f * D_nu2(x) + g * nu2(x))
 
     smt, cmt = sincos(m * θ)
 
@@ -184,7 +192,7 @@ function dual_ρIP(θ, shot, Ftype::Symbol, m::Integer, ν1_type::Symbol, k1, ν
             g = msmt * grt
             df = ncmt * grt
             dg = msmt * gtt
-            return int1(x, f, g), int2(x, df, dg)
+            return int_ab(x, f, g, df, dg, nu1, D_nu1, nu2, D_nu2)
         end
         I, dI = dual_inner_product(int_cos, k1, k2, ρ, 5)
     elseif Ftype === :sin
@@ -196,7 +204,7 @@ function dual_ρIP(θ, shot, Ftype::Symbol, m::Integer, ν1_type::Symbol, k1, ν
             g = nmcmt * grt
             df = nsmt * grt
             dg = nmcmt * gtt
-            return int1(x, f, g), int2(x, df, dg)
+            return int_ab(x, f, g, df, dg, nu1, D_nu1, nu2, D_nu2)
         end
         I, dI = dual_inner_product(int_sin, k1, k2, ρ, 5)
     end

@@ -130,20 +130,21 @@ function θr_oi(θo, θi, c0, cfe, sfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     @inbounds for m in eachindex(cfe)
         C = evaluate_inbounds(cfe[m], k, nu_ou, nu_eu, nu_ol, nu_el)
         S = evaluate_inbounds(sfe[m], k, nu_ou, nu_eu, nu_ol, nu_el)
-        θro += dot((S, C), sincos(m * θo))
-        θri += dot((S, C), sincos(m * θi))
+        scm = sincos(m * θo)
+        θro += S * scm[1] + C * scm[2]
+        scm = sincos(m * θi)
+        θri += S * scm[1] + C * scm[2]
     end
     return θro, θri
 end
 
-function res_find_ρ(ρ::Real, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep,
-                    cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep}, R::Real, Z::Real; return_θ=false)
+function res_find_ρ(ρ::Real, shot::Shot, R::Real, Z::Real; return_θ=false)
 
-    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(R0fe.x, ρ)
-    R0 = evaluate_inbounds(R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    Z0 = evaluate_inbounds(Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    ϵ = evaluate_inbounds(ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    κ = evaluate_inbounds(κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.R0fe.x, ρ)
+    R0 = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    Z0 = evaluate_inbounds(shot.Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵ = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κ = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
 
     a = R0 * ϵ
     b = κ * a
@@ -155,9 +156,9 @@ function res_find_ρ(ρ::Real, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::F
     signθ = θo < 0.0 ? -1.0 : 1.0
     θi = signθ * π - θo
 
-    c0 = evaluate_inbounds(c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0 = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
 
-    θro, θri = θr_oi(θo, θi, c0, cfe, sfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    θro, θri = θr_oi(θo, θi, c0, shot.cfe, shot.sfe, k, nu_ou, nu_eu, nu_ol, nu_el)
 
     Ro = R0 + a * cos(θro)
     Ri = R0 + a * cos(θri)
@@ -177,6 +178,16 @@ function res_zext(ρ::Real, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_r
     Z0 = evaluate_inbounds(Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ϵ = evaluate_inbounds(ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     κ = evaluate_inbounds(κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    b = R0 * ϵ * κ
+    return Z0 + sign(Z-Z0) * b - Z
+end
+
+function res_zext(ρ::Real, shot::Shot, Z::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.R0fe.x, ρ)
+    R0 = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    Z0 = evaluate_inbounds(shot.Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵ = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κ = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     b = R0 * ϵ * κ
     return Z0 + sign(Z-Z0) * b - Z
 end
@@ -210,12 +221,11 @@ function ρθ_RZ(shot::Shot, R::Real, Z::Real)
     ki==ko && return ρo, θo # on a surface exactly
     if abs(θi) == 0.5 * π
         # find ρ where Z = Zext
-
-        f_zext(x) = res_zext(x, shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, Z)^2
+        f_zext(x) = res_zext(x, shot, Z)^2
         ρi = optimize(f_zext, ρi, ρo).minimizer
         #ρi = Roots.secant_method(f_zext, (ρi, ρo))
     end
-    f_find_ρ(x) = res_find_ρ(x, shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe, shot.cfe, shot.sfe, R, Z)^2
+    f_find_ρ(x) = res_find_ρ(x, shot, R, Z)^2
     ρ = optimize(f_find_ρ, ρi, ρo).minimizer
     #ρ = Roots.secant_method(f_find_ρ, (ρi, ρo))
     # x0 = (ρi, ρo)
@@ -223,7 +233,7 @@ function ρθ_RZ(shot::Shot, R::Real, Z::Real)
     # ZP = ZeroProblem(f_find_ρ, x0)
     # ρ = solve(ZP, M)
 
-    θ = res_find_ρ(ρ, shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe, shot.cfe, shot.sfe, R, Z, return_θ=true)
+    θ = res_find_ρ(ρ, shot, R, Z, return_θ=true)
 
     return ρ, θ
 end

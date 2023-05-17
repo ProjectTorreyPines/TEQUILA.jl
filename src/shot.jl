@@ -436,7 +436,8 @@ end
 FFprime(shot::Shot, dp_dψ, f_df_dψ, Jt_R::Nothing) = f_df_dψ
 
 function FFprime(shot::Shot, dp_dψ, f_df_dψ::Nothing, Jt_R)
-    return x -> -μ₀ * (dp_dψ(x) + Jt_R(x) / twopi) / fsa_invR2(shot, x)
+    invR2 = FE_fsa(shot, fsa_invR2)
+    return x -> -μ₀ * (dp_dψ(x) + Jt_R(x) / twopi) / invR2(x)
 end
 
 function Fpol_dFpol_dψ(shot::Shot, ρ::Real)

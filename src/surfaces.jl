@@ -123,7 +123,8 @@ function surface_bracket(shot::Shot, R::Real, Z::Real)
     return ki, ρi, θi, ko, ρo, θo
 end
 
-function θr_oi(θo, θi, c0, cfe, sfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+
+function θr_oi(θo, θi, c0, shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid = Threads.threadid())
 
     θro = θo + c0
     θri = θi + c0

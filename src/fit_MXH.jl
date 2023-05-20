@@ -98,7 +98,7 @@ function refit(shot::Shot, lvls::AbstractVector{<:Real})#; inner_optimizer::Opti
 
     Rs = range(R0 - a, R0 + a, Ncntr)
     Zs = range(Z0 - b, Z0 + b, Ncntr)
-    for (i, r) in enumerate(Rs)
+    @Threads.threads for (i, r) in collect(enumerate(Rs))
         for (j, z) in enumerate(Zs)
             Ψcntr[j, i] = shot(r, z)
         end
@@ -106,43 +106,29 @@ function refit(shot::Shot, lvls::AbstractVector{<:Real})#; inner_optimizer::Opti
 
     @views cntrs = contours(Rs, Zs, transpose(Ψcntr), lvls[2:end-1])
 
-    #L = length(shot._cx)
-    #mxh = MXH(0.0, 0.0, 0.0, 0.0, 0.0, zeros(L), zeros(L))
     Nl = 0
     for cl in levels(cntrs)
         l = first(lines(cl))
         length(l.vertices) > Nl && (Nl = length(l.vertices))
     end
-    pr = zeros(Nl)
-    pz = similar(pr)
-    θ = similar(pr)
-    Δθᵣ = similar(pr)
-    dθ = similar(pr)
-    Fm = similar(pr)
+    pr = [zeros(Nl) for _ in 1:Threads.nthreads()]
+    pz = deepcopy(pr)
+    θ = deepcopy(pr)
+    Δθᵣ = deepcopy(pr)
+    dθ = deepcopy(pr)
+    Fm = deepcopy(pr)
 
     surfaces = deepcopy(shot.surfaces)
-    for (k, cl) in enumerate(levels(cntrs))
+    @Threads.threads for (k, cl) in collect(enumerate(levels(cntrs)))
+        tid = Threads.threadid()
         l = first(lines(cl))
-        Nl = length(l.vertices)
-        @views coordinates!(pr[1:Nl], pz[1:Nl], l)
-        #pr, pz = coordinates(lines(cl)[1]) # coordinates of this line segment
-        #Nl = length(pr)
-        #θ = similar(pr)
-        #Δθᵣ = similar(pr)
-        #dθ = similar(pr)
-        #Fm = similar(pr)
-        #MXH!(mxh, pr, pz; θ, Δθᵣ, dθ, Fm)
-        #@views flat_coeffs!(surfaces[:, k+1], mxh)
-        @views fit_flattened!(surfaces[:, k+1], pr[1:Nl], pz[1:Nl], θ[1:Nl], Δθᵣ[1:Nl], dθ[1:Nl], Fm[1:Nl])
-        optimize_fit!(surfaces[:, k+1], pr[1:Nl], pz[1:Nl])
+        N = length(l.vertices)
+        @views prv = pr[tid][1:N]
+        @views pzv = pz[tid][1:N]
+        @views coordinates!(prv, pzv, l)
+        @views fit_flattened!(surfaces[:, k+1], prv, pzv, θ[tid][1:N], Δθᵣ[tid][1:N], dθ[tid][1:N], Fm[tid][1:N])
+        optimize_fit!(surfaces[:, k+1], prv, pzv)
     end
-
-    # Allocate initial guess and bounds
-    #@views x0 = zero(shot.surfaces[:,1])
-    #lower = zero(x0)
-    #upper = zero(x0)
-
-    #loop_surfaces!(shot_refit, lvls, x0, lower, upper; inner_optimizer)
 
     # Extrapolate or set to zero on-axis
     ρ2 = sqrt((lvls[2]-lvls[1])/(lvls[end]-lvls[1]))

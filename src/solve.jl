@@ -31,7 +31,7 @@ function solve(shot::Shot, its::Integer;
 end
 
 function solve!(refill::Shot, its::Integer; debug=false)
-    Fi, dFi, Fo, P = fft_prealloc(refill.M)
+    Fis, dFis, Fos, Ps = fft_prealloc_threaded(refill.M)
     A = preallocate_Astar(refill)
     L = 2 * refill.N * (2 * refill.M + 1)
     B = zeros(L)
@@ -41,8 +41,8 @@ function solve!(refill::Shot, its::Integer; debug=false)
         _, _, Ψold = find_axis(refill)
     end
     for i in 1:its
-        define_Astar!(A, refill, Fi, dFi, Fo, P)
-        define_B!(B, refill, Fi, Fo, P)
+        define_Astar!(A, refill, Fis, dFis, Fos, Ps)
+        define_B!(B, refill, Fis[1], Fos[1], Ps[1])
         set_bc!(refill, A, B)
 
         C = A \ B

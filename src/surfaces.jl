@@ -87,8 +87,6 @@ function surfaces_FE(ρ:: AbstractVector{<:Real}, surfaces:: AbstractMatrix{<:Re
     return R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe
 end
 
-
-
 outside(S::Union{MXH, AbstractVector{<:Real}}, x) = !in_surface(x[1], x[2], S);
 
 function surface_bracket(shot::Shot, R::Real, Z::Real)
@@ -182,14 +180,16 @@ function res_zext(ρ::Real, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_r
     return Z0 + sign(Z-Z0) * b - Z
 end
 
-function res_zext(ρ::Real, shot::Shot, Z::Real)
+function res_zext(ρ::Real, shot::Shot, Z::Real; debug=false)
     k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.R0fe.x, ρ)
     R0 = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     Z0 = evaluate_inbounds(shot.Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ϵ = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     κ = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     b = R0 * ϵ * κ
-    return Z0 + sign(Z-Z0) * b - Z
+    sign_dZ = (Z <= Z0) ? -1 : 1
+    debug && println(Z0)
+    return Z0 + sign_dZ * b - Z
 end
 
 function ρθ_approx(shot::Shot, R::Real, Z::Real)
@@ -215,7 +215,9 @@ function ρθ_approx(shot::Shot, R::Real, Z::Real)
     return ρ, θ
 end
 
-function ρθ_RZ(shot::Shot, R::Real, Z::Real)
+ρθ_RZ(shot::Shot, R::Real, Z::Real) = ρθ_RZ4(shot, R, Z)
+
+function ρθ_RZ1(shot::Shot, R::Real, Z::Real)
 
     ki, ρi, θi, ko, ρo, θo = surface_bracket(shot, R, Z)
     ki==ko && return ρo, θo # on a surface exactly
@@ -236,6 +238,99 @@ function ρθ_RZ(shot::Shot, R::Real, Z::Real)
     θ = res_find_ρ(ρ, shot, R, Z, return_θ=true)
 
     return ρ, θ
+end
+
+function ρθ_RZ3(shot::Shot, R::Real, Z::Real)
+
+    f_zext(x) = res_zext(x, shot, Z)^2
+    ρi = optimize(f_zext, 0, 1).minimizer
+    f_find_ρ(x) = res_find_ρ(x, shot, R, Z)^2
+    ρ = optimize(f_find_ρ, ρi, 1.0).minimizer
+    θ = res_find_ρ(ρ, shot, R, Z, return_θ=true)
+    return ρ, θ
+end
+
+function ρθ_RZ4(shot::Shot, R::Real, Z::Real)
+    @views if !in_surface(R, Z, shot.surfaces[:,end])
+        ρ = 1.0
+        θ = res_find_ρ(ρ, shot, R, Z, return_θ=true)
+        return ρ, θ
+    else
+        f_zext(x;debug=false) = res_zext(x, shot, Z;debug)
+        try
+            ρ = Roots.find_zero(f_zext, (0, 1), Roots.A42())
+        catch err
+            println((R, Z, f_zext(0.0;debug=true), f_zext(1.0;debug=true)))
+            #println((f_find_ρ(0.0), f_find_ρ(1.0)))
+            rethrow(err)
+        end
+        if ρ < 1.0
+            f_find_ρ(x) = res_find_ρ(x, shot, R, Z)
+            try
+                ρ = Roots.find_zero(f_find_ρ, (ρ, 1.0), Roots.A42())
+            catch err
+                println((R, Z, ρ))
+                println((f_find_ρ(ρ), f_find_ρ(1.0)))
+                rethrow(err)
+            end
+        end
+        θ = res_find_ρ(ρ, shot, R, Z, return_θ=true)
+        return ρ, θ
+    end
+end
+
+function ΔZext(shot, ρ, Z)
+    tid = Threads.threadid()
+    k, nu_ou, nu_eu, nu_ol, nu_el = TEQUILA.compute_bases(shot.ρ, ρ)
+    R0x = TEQUILA.evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    Z0x = TEQUILA.evaluate_inbounds(shot.Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = TEQUILA.evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = TEQUILA.evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ax = R0x * ϵx
+    bx = κx * ax
+
+    Δ = (Z < Z0x) ? Z - (Z0x - bx) : Z - (Z0x + bx)
+    return Δ
+end
+
+function find_Zext(shot, Z)
+    f(x) = ΔZext(shot, x, Z)
+    return Roots.find_zero(f, (0,1), Roots.A42())
+end
+
+function Δ(shot, ρ, R, Z)
+    tid = Threads.threadid()
+    k, nu_ou, nu_eu, nu_ol, nu_el = TEQUILA.compute_bases(shot.ρ, ρ)
+    R0x = TEQUILA.evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    Z0x = TEQUILA.evaluate_inbounds(shot.Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = TEQUILA.evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = TEQUILA.evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = TEQUILA.evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    TEQUILA.evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
+    
+    ax = R0x * ϵx
+    bx = κx * ax
+    
+    aa = min(1.0, max(-1.0, (Z0x - Z) / bx))
+    θ = asin(aa)
+    
+    signθ = (θ < 0.0) ? -1.0 : 1.0
+    θext = signθ * 0.5 * π
+    Zext = Z0x - bx * sin(θext)
+    R_at_Zext = MillerExtendedHarmonic.R_MXH(θext, R0x, c0x, shot._cx[tid], shot._sx[tid], ax)
+    
+    (R < R_at_Zext) && (θ = signθ * π - θ)
+    
+    Rx = MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, shot._cx[tid], shot._sx[tid], ax)
+    Δ = R - Rx
+
+    Zx = MillerExtendedHarmonic.Z_MXH(θ, Z0x, κx, ax)
+    Δ += sign(Δ) * abs(Z-Zx)
+end
+
+function ρθ_RZ2(shot, R, Z)
+    f(x) = Δ(shot, x, R, Z)
+    return Roots.find_zero(f, (0,1), Roots.A42())
 end
 
 ##########################################################

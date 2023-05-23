@@ -1,32 +1,7 @@
 function solve(shot::Shot, its::Integer;
-               dp_dψ=nothing, f_df_dψ=nothing, Jt_R=nothing, pbnd=nothing, fbnd=nothing, debug=false)
-
-    pprime = dp_dψ  !== nothing ? dp_dψ   : deepcopy(shot.dp_dψ)
-
-    ffprim = nothing
-    jtor   = nothing
-    if f_df_dψ !== nothing && Jt_r !== nothing
-        throw(ErrorException("Must specify only one of the following: f_df_dψ, Jt_R"))
-    elseif f_df_dψ !== nothing
-        ffprim = f_df_dψ
-        jtor = nothing
-    elseif Jt_R !== nothing
-        ffprim = nothing
-        jtor = Jt_R
-    else
-        ffprim = deepcopy(shot.f_df_dψ)
-        jtor = deepcopy(shot.Jt_R)
-    end
-
-    pb  = pbnd !== nothing ? pbnd : shot.pbnd
-    fb  = fbnd !== nothing ? fbnd : shot.fbnd
-
-    @assert pprime !== nothing
-    @assert (ffprim !== nothing) ⊻ (jtor !== nothing)
-    @assert pb !== nothing
-    @assert fb !== nothing
-
-    refill = Shot(shot; dp_dψ = pprime, f_df_dψ = ffprim, Jt_R = jtor, pbnd = pb, fbnd = fb)
+               P=nothing, dP_dψ=nothing, F_dF_dψ=nothing, Jt_R=nothing, Jt=nothing,
+               Pbnd=shot.Pbnd, Fbnd=shot.Fbnd, debug=false)
+    refill = Shot(shot; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd)
     return solve!(refill, its; debug)
 end
 

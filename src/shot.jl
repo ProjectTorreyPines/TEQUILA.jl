@@ -198,7 +198,7 @@ function Shot(shot; P::ProfType=nothing, dP_dψ::ProfType=nothing,
         Jt_R = deepcopy(shot.Jt_R)
         Jt = deepcopy(shot.Jt)
     end
-        
+
     return Shot(shot.N, shot.M, deepcopy(shot.ρ), deepcopy(shot.surfaces), deepcopy(shot.C),
                 deepcopy(shot.R0fe), deepcopy(shot.Z0fe), deepcopy(shot.ϵfe), deepcopy(shot.κfe),
                 deepcopy(shot.c0fe), deepcopy(shot.cfe), deepcopy(shot.sfe);

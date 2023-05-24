@@ -331,7 +331,12 @@ function RHS(shot::Shot, ρ::Real, θ::Real, invR, invR2)
         throw(ErrorException("Must specify one of the following: F_dF_dψ, Jt_R"))
     end
 
-    pprime = (shot.dP_dψ !== nothing) ? shot.dP_dψ(ρ) : D(shot.P, ρ) / dψ_dρ(shot, ρ) 
+    if shot.dP_dψ !== nothing
+        pprime = shot.dP_dψ(ρ)
+    else
+        ψprime = dψ_dρ(shot, ρ)
+        pprime = (ψprime == 0.0) ? 0.0 : D(shot.P, ρ) / ψprime
+    end
 
     if shot.F_dF_dψ !== nothing
         ffprim = shot.F_dF_dψ(ρ)

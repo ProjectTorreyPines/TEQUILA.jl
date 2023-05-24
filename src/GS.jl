@@ -303,9 +303,10 @@ function define_B!(B, shot, Fi::AbstractVector{<:Complex}, Fo::AbstractVector{<:
 
     mrange = 0:2M
 
-    invR2 = shot.Jt_R === nothing ? nothing : FE_fsa(shot, fsa_invR2)
+    invR2 = (shot.F_dF_dψ === nothing) ? FE_fsa(shot, fsa_invR2) : nothing
+    invR  = (shot.Jt !==nothing) ? FE_fsa(shot, fsa_invR) : nothing
 
-    rhs(x, t) = RHS(shot, x, t; invR2)
+    rhs(x, t) = RHS(shot, x, t, invR, invR2)
 
     # Loop over columns of
     for j in 1:N
@@ -324,23 +325,30 @@ function define_B!(B, shot, Fi::AbstractVector{<:Complex}, Fo::AbstractVector{<:
     return
 end
 
-function RHS(shot::Shot, ρ::Real, θ::Real; invR2=nothing)
-    shot.dp_dψ === nothing &&  throw(ErrorException("Must specify: dp_dψ"))
-    (shot.f_df_dψ === nothing && shot.Jt_R === nothing) && throw(ErrorException("Must specify one of the following: f_df_dψ, Jt_R"))
+function RHS(shot::Shot, ρ::Real, θ::Real, invR, invR2)
+    (shot.P === nothing && shot.dP_dψ === nothing) &&  throw(ErrorException("Must specify one of the following: P, dP_dψ"))
+    if shot.F_dF_dψ === nothing && shot.Jt_R === nothing && shot.Jt === nothing
+        throw(ErrorException("Must specify one of the following: F_dF_dψ, Jt_R"))
+    end
 
-    pprime = shot.dp_dψ(ρ)
+    if shot.dP_dψ !== nothing
+        pprime = shot.dP_dψ(ρ)
+    else
+        ψprime = dψ_dρ(shot, ρ)
+        pprime = (ψprime == 0.0) ? 0.0 : D(shot.P, ρ) / ψprime
+    end
 
-    if shot.f_df_dψ !== nothing
-        ffprim = shot.f_df_dψ(ρ)
+    if shot.F_dF_dψ !== nothing
+        ffprim = shot.F_dF_dψ(ρ)
         return RHS_pp_ffp(shot, ρ, θ, pprime, ffprim)
     else
-        JtoR = shot.Jt_R(ρ)
+        JtoR = (shot.Jt_R !== nothing) ? shot.Jt_R(ρ) : shot.Jt(ρ) * invR(ρ)
         iR2 = invR2(ρ)
         return RHS_pp_jt(shot, ρ, θ, pprime, JtoR, iR2)
     end
 end
 
-function RHS_pp_ffp(shot::Shot, ρ::Real, θ::Real, dp_dψ::Real, f_df_dψ::Real)
+function RHS_pp_ffp(shot::Shot, ρ::Real, θ::Real, dP_dψ::Real, F_dF_dψ::Real)
     k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
     R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
@@ -360,13 +368,13 @@ function RHS_pp_ffp(shot::Shot, ρ::Real, θ::Real, dp_dψ::Real, f_df_dψ::Real
     J = MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, shot._cx, shot._sx, dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx, shot._dsx)
     R = MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, shot._cx, shot._sx, ax)
 
-    pterm  =  μ₀ * dp_dψ * J
-    ffterm = f_df_dψ * J / R^2
+    pterm  =  μ₀ * dP_dψ * J
+    ffterm = F_dF_dψ * J / R^2
 
     return -twopi^2 * (pterm + ffterm)
 end
 
-function RHS_pp_jt(shot::Shot, ρ::Real, θ::Real, dp_dψ::Real, JtoR::Real, iR2:: Real)
+function RHS_pp_jt(shot::Shot, ρ::Real, θ::Real, dP_dψ::Real, JtoR::Real, iR2:: Real)
     k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
     R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
@@ -385,7 +393,7 @@ function RHS_pp_jt(shot::Shot, ρ::Real, θ::Real, dp_dψ::Real, JtoR::Real, iR2
     J = MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, shot._cx, shot._sx, dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx, shot._dsx)
     R = MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, shot._cx, shot._sx, ax)
 
-    pterm  = -twopi * (1.0 - 1.0 / (R^2 * iR2)) * dp_dψ * J
+    pterm  = -twopi * (1.0 - 1.0 / (R^2 * iR2)) * dP_dψ * J
     Jterm = JtoR * J / (R^2 * iR2)
 
     return twopi * μ₀ * (pterm + Jterm)

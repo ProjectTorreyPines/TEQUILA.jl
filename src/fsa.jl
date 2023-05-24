@@ -114,6 +114,19 @@ function fsa_invR2(shot, ρ)
     return FSA(f, shot, ρ)
 end
 
+function fsa_invR(shot, ρ)
+    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
+    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ax = R0x * ϵx
+
+    f(θ) = MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, shot._cx, shot._sx, ax) ^ -1
+
+    return FSA(f, shot, ρ)
+end
+
 function FE_fsa(shot, fsa, coeffs = Vector{typeof(shot.ρ[1])}(undef, 2*length(shot.ρ)); ε = 1e-6)
     for (i, x) in enumerate(shot.ρ)
         # BCL 4/26/23: I'd like to use ForwardDiff here, but the use of intermediate arrays

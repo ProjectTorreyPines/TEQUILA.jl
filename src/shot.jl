@@ -133,6 +133,30 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH;
     return Shot(N, M, ρ, surfaces, C, S_FE...; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd)
 end
 
+function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ::FE_rep;
+             P::ProfType=nothing, dP_dψ::ProfType=nothing,
+             F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
+             Pbnd::Real=0.0, Fbnd::Real=10.0)
+
+    ρ = sqrt.(range(0, 1, N))
+
+    L = length(boundary.c)
+    surfaces = zeros(5 + 2L, N)
+    Stmp = deepcopy(boundary)
+    for k in eachindex(ρ)
+        concentric_surface!(Stmp, ρ[k], boundary)
+        @views flat_coeffs!(surfaces[:, k], Stmp)
+    end
+
+    S_FE = surfaces_FE(ρ, surfaces)
+
+    C = zeros(2N, 2M+1)
+    C[2:2:end, 1] .= Ψ.(ρ)
+    C[1:2:end, 1] .= D.(Ref(Ψ), ρ)
+
+    return Shot(N, M, ρ, surfaces, C, S_FE...; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd)
+end
+
 function Shot(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, surfaces::AbstractMatrix{<:Real},
               C::AbstractMatrix{<:Real}, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep,
               cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep};

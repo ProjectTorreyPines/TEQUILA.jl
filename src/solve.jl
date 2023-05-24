@@ -1,4 +1,4 @@
-`xfunction solve(shot::Shot, its::Integer;
+function solve(shot::Shot, its::Integer;
                P=nothing, dP_dψ=nothing, F_dF_dψ=nothing, Jt_R=nothing, Jt=nothing,
                Pbnd=shot.Pbnd, Fbnd=shot.Fbnd, debug=false)
     refill = Shot(shot; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd)

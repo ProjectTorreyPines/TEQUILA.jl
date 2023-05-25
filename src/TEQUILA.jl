@@ -13,6 +13,7 @@ import MXHEquilibrium: identify_cocos, transform_cocos, efit, AbstractEquilibriu
 using RecipesBase
 import PlotUtils: cgrad
 import QuadGK:quadgk
+import Roots
 #using Memoize
 
 const halfpi = 0.5 * π

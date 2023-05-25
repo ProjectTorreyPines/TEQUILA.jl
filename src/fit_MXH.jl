@@ -106,8 +106,6 @@ function refit(shot::Shot, lvls::AbstractVector{<:Real})#; inner_optimizer::Opti
 
     @views cntrs = contours(Rs, Zs, transpose(Ψcntr), lvls[2:end-1])
 
-    #L = length(shot._cx)
-    #mxh = MXH(0.0, 0.0, 0.0, 0.0, 0.0, zeros(L), zeros(L))
     Nl = 0
     for cl in levels(cntrs)
         l = first(lines(cl))

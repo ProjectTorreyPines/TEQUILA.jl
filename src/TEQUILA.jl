@@ -45,7 +45,7 @@ include("GS.jl")
 export preallocate_Astar, define_Astar, define_Astar!, set_bc!, define_B, define_B!
 
 include("fsa.jl")
-export FSA, Vprime, fsa_invR2
+export FSA, Vprime, fsa_invR2, fsa_invR, Ip
 
 include("solve.jl")
 export solve

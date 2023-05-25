@@ -1,7 +1,9 @@
 const ProfType = Union{Nothing, FE_rep, Function}
+const IpType = Union{Nothing, Real}
 
 mutable struct Shot{I1<:Integer, VR1<:AbstractVector{<:Real}, MR1<:AbstractMatrix{<:Real}, MR2<:AbstractMatrix{<:Real},
-                    PT1<:ProfType, PT2<:ProfType, PT3<:ProfType, PT4<:ProfType, PT5<:ProfType, R1<:Real, R2<:Real,
+                    PT1<:ProfType, PT2<:ProfType, PT3<:ProfType, PT4<:ProfType, PT5<:ProfType,
+                    R1<:Real, R2<:Real, IP1<:IpType,
                     FE1<:FE_rep, VFE1<:AbstractVector{<:FE_rep}, VR2<:AbstractVector{<:Real}, F1<:Factorization}  <: AbstractEquilibrium
     N :: I1
     M :: I1
@@ -15,6 +17,7 @@ mutable struct Shot{I1<:Integer, VR1<:AbstractVector{<:Real}, MR1<:AbstractMatri
     Jt :: PT5
     Pbnd :: R1
     Fbnd :: R2
+    Ip_target :: IP1
     R0fe::FE1
     Z0fe::FE1
     ϵfe::FE1
@@ -53,20 +56,20 @@ end
 function Shot(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, surfaces :: AbstractVector{<:MXH}, Ψ;
               P::ProfType=nothing, dP_dψ::ProfType=nothing,
               F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
-              Pbnd::Real=0.0, Fbnd::Real=10.0, zero_boundary=false)
+              Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing, zero_boundary=false)
     @assert length(surfaces) == N
     L = length(surfaces[1].c)
     S = zeros(5+2L, N)
     for (k, mxh) in enumerate(surfaces)
        @views flat_coeffs!(S[:, k], mxh)
     end
-    Shot(N, M, ρ, S, Ψ; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, zero_boundary)
+    Shot(N, M, ρ, S, Ψ; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target, zero_boundary)
 end
 
 function Shot(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, surfaces :: AbstractMatrix{<:Real}, Ψ;
               P::ProfType=nothing, dP_dψ::ProfType=nothing,
               F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
-              Pbnd::Real=0.0, Fbnd::Real=10.0, zero_boundary=false)
+              Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing, zero_boundary=false)
 
     S_FE = surfaces_FE(ρ, surfaces)
 
@@ -77,13 +80,13 @@ function Shot(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, surfaces
 
     C = compute_Cmatrix(N, M, ρ, Ψ_ρθ)
 
-    return Shot(N, M, ρ, surfaces, C, S_FE...; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd)
+    return Shot(N, M, ρ, surfaces, C, S_FE...; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
 function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ;
               P::ProfType=nothing, dP_dψ::ProfType=nothing,
               F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
-              Pbnd::Real=0.0, Fbnd::Real=10.0, zero_boundary=false)
+              Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing, zero_boundary=false)
 
     ρ = range(0, 1, N)
 
@@ -108,13 +111,13 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ;
 
     C = compute_Cmatrix(N, M, ρ, Ψ_ρθ)
 
-    return Shot(N, M, ρ, surfaces, C, S_FE...; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd)
+    return Shot(N, M, ρ, surfaces, C, S_FE...; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
 function Shot(N :: Integer, M :: Integer, boundary :: MXH;
              P::ProfType=nothing, dP_dψ::ProfType=nothing,
              F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
-             Pbnd::Real=0.0, Fbnd::Real=10.0)
+             Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing)
 
     ρ = sqrt.(range(0, 1, N))
 
@@ -130,13 +133,13 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH;
 
     C = zeros(2N, 2M+1)
 
-    return Shot(N, M, ρ, surfaces, C, S_FE...; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd)
+    return Shot(N, M, ρ, surfaces, C, S_FE...; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
 function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ::FE_rep;
              P::ProfType=nothing, dP_dψ::ProfType=nothing,
              F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
-             Pbnd::Real=0.0, Fbnd::Real=10.0)
+             Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing)
 
     ρ = sqrt.(range(0, 1, N))
 
@@ -154,7 +157,7 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ::FE_rep;
     C[2:2:end, 1] .= Ψ.(ρ)
     C[1:2:end, 1] .= D.(Ref(Ψ), ρ)
 
-    return Shot(N, M, ρ, surfaces, C, S_FE...; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd)
+    return Shot(N, M, ρ, surfaces, C, S_FE...; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
 function Shot(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, surfaces::AbstractMatrix{<:Real},
@@ -162,9 +165,10 @@ function Shot(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, surfaces::Abst
               cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep};
               P::ProfType=nothing, dP_dψ::ProfType=nothing,
               F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
-              Pbnd::Real=0.0, Fbnd::Real=10.0)
+              Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing)
     Afac = factorize(mass_matrix(N, ρ))
-    return Shot(N, M, ρ, surfaces, C, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, Afac; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd)
+    return Shot(N, M, ρ, surfaces, C, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, Afac;
+                P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
 function Shot(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, surfaces::AbstractMatrix{<:Real},
@@ -172,17 +176,17 @@ function Shot(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, surfaces::Abst
               cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep}, Afac::Factorization;
               P::ProfType=nothing, dP_dψ::ProfType=nothing,
               F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
-              Pbnd::Real=0.0, Fbnd::Real=10.0)
+              Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing)
     L = length(cfe)
     cx = zeros(L)
     sx = zeros(L)
     dcx = zeros(L)
     dsx = zeros(L)
-    Shot(N, M, ρ, surfaces, C, P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd,
+    Shot(N, M, ρ, surfaces, C, P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target,
          R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, cx, sx, dcx, dsx, Afac)
 end
 
-function Shot(N :: Integer, M :: Integer, MXH_modes::Integer, filename::String)
+function Shot(N :: Integer, M :: Integer, MXH_modes::Integer, filename::String; fix_Ip::Bool=false)
 
     g = MXHEquilibrium.readg(filename)
     cc_in = identify_cocos(g, clockwise_phi=false)[1]
@@ -201,13 +205,15 @@ function Shot(N :: Integer, M :: Integer, MXH_modes::Integer, filename::String)
     dP_dψ = FE(rho, g.pprime)
     F_dF_dψ = FE(rho, g.ffprim)
 
+    Ip_target = fix_Ip ? g.current : nothing
+
     # Fill a Shot with surfaces concentric to bnd
-    return Shot(N, M, bnd, Ψ; dP_dψ, F_dF_dψ, Pbnd, Fbnd)
+    return Shot(N, M, bnd, Ψ; dP_dψ, F_dF_dψ, Pbnd, Fbnd, Ip_target)
 end
 
 function Shot(shot; P::ProfType=nothing, dP_dψ::ProfType=nothing,
               F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
-              Pbnd::Real=shot.Pbnd, Fbnd::Real=shot.Fbnd)
+              Pbnd::Real=shot.Pbnd, Fbnd::Real=shot.Fbnd, Ip_target::IpType=shot.Ip_target)
     Np = (P !== nothing) + (dP_dψ !== nothing)
     (Np > 1) && throw(ErrorException("Must specify only one of the following: P, dP_dψ"))
     if Np == 0
@@ -226,7 +232,7 @@ function Shot(shot; P::ProfType=nothing, dP_dψ::ProfType=nothing,
     return Shot(shot.N, shot.M, deepcopy(shot.ρ), deepcopy(shot.surfaces), deepcopy(shot.C),
                 deepcopy(shot.R0fe), deepcopy(shot.Z0fe), deepcopy(shot.ϵfe), deepcopy(shot.κfe),
                 deepcopy(shot.c0fe), deepcopy(shot.cfe), deepcopy(shot.sfe);
-                P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd)
+                P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
 

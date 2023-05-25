@@ -143,3 +143,54 @@ function Ψ(shot)
     @views Psi = FE_rep(shot.ρ, shot.C[:,1])
     return Psi
 end
+
+function Ip(shot; ε = 1e-6)
+    coeffs = Vector{typeof(shot.ρ[1])}(undef, 2*length(shot.ρ))
+    for (i, x) in enumerate(shot.ρ)
+        # BCL 4/26/23: I'd like to use ForwardDiff here, but the use of intermediate arrays
+        #              in evaluate_csx!() prevents that
+        xp = x==shot.ρ[end] ? 1.0 : x + ε * (shot.ρ[i+1] - shot.ρ[i])
+        xm = x==shot.ρ[1]   ? 0.0 : x - ε * (shot.ρ[i] - shot.ρ[i-1])
+        coeffs[2i-1] = (Vprime(shot, xp) - Vprime(shot, xm)) / (xp - xm)
+        coeffs[2i] = Vprime(shot, x)
+    end
+    Vp = FE_rep(shot.ρ, coeffs)
+    if shot.Jt_R !== nothing
+        f1(x) = Vp(x) * shot.Jt_R(x)
+        return quadgk(f1, 0.0, 1.0)[1] / twopi
+    elseif shot.Jt !== nothing
+        invR = FE_fsa(shot, fsa_invR)
+        f2(x) = Vp(x) * shot.Jt(x) * invR(x)
+        return quadgk(f2, 0.0, 1.0)[1] / twopi
+    else
+        invR2 = FE_fsa(shot, fsa_invR2)
+        if shot.dP_dψ !== nothing
+            f3(x) = - Vp(x) * (shot.dP_dψ(x) + invR2(x) * shot.F_dF_dψ(x) / μ₀)
+            return quadgk(f3, 0.0, 1.0)[1]
+        else
+            Pp(x) = D(shot.P, x) / dψ_dρ(shot, x)
+            f4(x) = - Vp(x) * (Pp(x) + invR2(x) * shot.F_dF_dψ(x) / μ₀)
+            return quadgk(f4, 0.0, 1.0)[1]
+        end
+    end
+    return 0.0
+end
+
+function Ip_ffp(shot; ε = 1e-6)
+    (shot.F_dF_dψ === nothing) && return 0.0
+
+    coeffs = Vector{typeof(shot.ρ[1])}(undef, 2*length(shot.ρ))
+    for (i, x) in enumerate(shot.ρ)
+        # BCL 4/26/23: I'd like to use ForwardDiff here, but the use of intermediate arrays
+        #              in evaluate_csx!() prevents that
+        xp = x==shot.ρ[end] ? 1.0 : x + ε * (shot.ρ[i+1] - shot.ρ[i])
+        xm = x==shot.ρ[1]   ? 0.0 : x - ε * (shot.ρ[i] - shot.ρ[i-1])
+        coeffs[2i-1] = (Vprime(shot, xp) - Vprime(shot, xm)) / (xp - xm)
+        coeffs[2i] = Vprime(shot, x)
+    end
+    Vp = FE_rep(shot.ρ, coeffs)
+
+    invR2 = FE_fsa(shot, fsa_invR2)
+    f(x) = - Vp(x) * invR2(x) * shot.F_dF_dψ(x) / μ₀
+    return quadgk(f, 0.0, 1.0)[1]
+end

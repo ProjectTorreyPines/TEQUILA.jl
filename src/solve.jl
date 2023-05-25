@@ -16,6 +16,9 @@ function solve!(refill::Shot, its::Integer; debug=false)
         _, _, Ψold = find_axis(refill)
     end
     for i in 1:its
+        if refill.Ip_target !== nothing
+            scale_Ip!(refill)
+        end
         define_Astar!(A, refill, Fi, dFi, Fo, P)
         define_B!(B, refill, Fi, Fo, P)
         set_bc!(refill, A, B)
@@ -36,4 +39,29 @@ function solve!(refill::Shot, its::Integer; debug=false)
         end
     end
     return refill
+end
+
+function scale_Ip!(shot)
+
+    (shot.Ip_target === nothing) && return
+
+    I_c = Ip(shot)
+
+    if shot.Jt_R !== nothing
+        Jt_R = deepcopy(shot.Jt_R)
+        Jt_R.coeffs  .*= shot.Ip_target / I_c
+        shot.Jt_R = Jt_R
+    elseif shot.Jt !== nothing
+        Jt = deepcopy(shot.Jt)
+        Jt.coeffs  .*= shot.Ip_target / I_c
+        shot.Jt = Jt
+    else
+        ΔI = shot.Ip_target - I_c
+        If_c = Ip_ffp(shot)
+        f = 1 + ΔI / If_c
+        F_dF_dψ = deepcopy(shot.F_dF_dψ)
+        F_dF_dψ.coeffs  .*= f
+        shot.F_dF_dψ = F_dF_dψ
+    end
+    return
 end

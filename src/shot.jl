@@ -480,7 +480,16 @@ end
 Pprime(shot::Shot, P::Nothing, dP_dψ) = dP_dψ
 
 function Pprime(shot::Shot, P, dP_dψ::Nothing)
-    return x -> return D(shot.P, x) /  dψ_dρ(shot, x)
+    function dp(x)
+        if x == 0.0
+            ϵ = 1e-6
+            dp1 = dp(ϵ)
+            dp2 = dp(2ϵ)
+            return 2.0 * dp1 - dp2
+        end
+        return D(shot.P, x) /  dψ_dρ(shot, x)
+    end
+    return dp
 end
 
 function MXHEquilibrium.pressure_gradient(shot::Shot, psi)

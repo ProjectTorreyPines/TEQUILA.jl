@@ -121,11 +121,8 @@ function Δ(shot, ρ, R, Z; return_θ = false)
 end
 
 function ρθ_RZ(shot, R, Z)
-    ρ = 1.0
-    @views if in_surface(R, Z, shot.surfaces[:,end])
-        f(x) = Δ(shot, x, R, Z)
-        ρ = Roots.find_zero(f, (0,1), Roots.A42())
-    end
+    f(x) = Δ(shot, x, R, Z)
+    ρ = f(1.0) < 0.0 ? 1.0 : Roots.find_zero(f, (0,1), Roots.A42())
     θ = (ρ == 0.0) ? 0.0 : Δ(shot, ρ, R, Z; return_θ = true)
     return ρ, θ
 end

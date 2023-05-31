@@ -127,6 +127,25 @@ function ρθ_RZ(shot, R, Z)
     return ρ, θ
 end
 
+function fnl(u, p::Tuple{<:Real, <:Real, <:Shot})
+    r, z = R_Z(p[3], u[1], u[2])
+    return @SVector[r - p[1], z - p[2]]
+end
+function Jnl(u, p::Tuple{<:Real, <:Real, <:Shot})
+    R_ρ, R_θ, Z_ρ, Z_θ = TEQUILA.JacMat(p[3], u[1], u[2])
+    return @SMatrix[R_ρ R_θ; Z_ρ Z_θ]
+end
+
+function ρθ_RZ2(shot, R, Z)
+    fJ = NonlinearFunction{false, NonlinearSolve.SciMLBase.FullSpecialize}(fnl; jac=Jnl)
+    u0 = @SVector[0.5, 0.0]
+    p = (R, Z, shot)
+    probN = NonlinearProblem{false}(fJ, u0, p)
+    S = NonlinearSolve.solve(probN, SimpleNewtonRaphson())
+    ρ, θ = S[1], S[2]
+    return ρ, θ
+end 
+
 ##########################################################
 # BCL 8/24/22: THESE SHOULD ALL MAKE USE OF compute_bases
 ##########################################################
@@ -303,6 +322,24 @@ function Jacobian(shot::Shot, ρ::Real, θ::Real)
     evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
 
     return MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, shot._cx, shot._sx, dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx, shot._dsx)
+end
+
+function JacMat(shot::Shot, ρ::Real, θ::Real)
+    k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
+    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+
+    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+
+    return MillerExtendedHarmonic.JacMat(θ, R0x, ϵx, κx, c0x, shot._cx, shot._sx, dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx, shot._dsx)
 end
 
 function ∇ρ(shot::Shot, ρ::Real, θ::Real)

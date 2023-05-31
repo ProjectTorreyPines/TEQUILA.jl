@@ -14,6 +14,7 @@ using RecipesBase
 import PlotUtils: cgrad
 import QuadGK:quadgk
 import Roots
+using NonlinearSolve
 #using Memoize
 
 const halfpi = 0.5 * π

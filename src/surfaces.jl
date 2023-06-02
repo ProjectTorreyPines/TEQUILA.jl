@@ -87,156 +87,43 @@ function surfaces_FE(ρ:: AbstractVector{<:Real}, surfaces:: AbstractMatrix{<:Re
     return R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe
 end
 
+function Δ(shot, ρ, R, Z; return_θ = false, tid = Threads.threadid())
+    k, nu_ou, nu_eu, nu_ol, nu_el = TEQUILA.compute_bases(shot.ρ, ρ)
+    R0x = TEQUILA.evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    Z0x = TEQUILA.evaluate_inbounds(shot.Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = TEQUILA.evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = TEQUILA.evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = TEQUILA.evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    TEQUILA.evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
 
+    ax = R0x * ϵx
+    bx = κx * ax
 
-outside(S::Union{MXH, AbstractVector{<:Real}}, x) = !in_surface(x[1], x[2], S);
-
-function surface_bracket(shot::Shot, R::Real, Z::Real)
-
-    x = SVector(R, Z)
-
-    _, Ncol = size(shot.surfaces)
-
-    get_col(k::Integer) = @views shot.surfaces[:, k]
-    get_col(x::SVector{2,<:Real}) = x
-
-    ko = searchsortedfirst(1:Ncol, x, by=get_col, lt=outside)
-
-    ko == 1 && return 1, shot.ρ[1], 0.0, 1, shot.ρ[1], 0.0
-
-    if ko > shot.N
-        ρ = shot.ρ[end]
-        @views θ = nearest_angle(R, Z, shot.surfaces[:, end])
-        return shot.N, ρ, θ, shot.N, ρ, θ
+    if bx == 0.0
+        θ = 0.0
+    else
+        aa = min(1.0, max(-1.0, (Z0x - Z) / bx))
+        θ = asin(aa)
     end
+    signθ = (θ < 0.0) ? -1.0 : 1.0
+    minmax = (signθ > 0.0) ? :min : :max
+    R_at_Zext = MillerExtendedHarmonic.R_at_Zext(minmax, R0x, c0x, shot._cx[tid], shot._sx[tid], ax)
 
-    ρo = shot.ρ[ko]
-    @views So = shot.surfaces[:, ko]
-    θo = nearest_angle(R, Z, So)
-    Ro = R_MXH(θo, So)
-    Zo = Z_MXH(θo, So)
-    (R==Ro && Z==Zo) && return ko, ρo, θo, ko, ρo, θo
+    (R < R_at_Zext) && (θ = signθ * π - θ)
 
-    ki = ko - 1
-    ρi = shot.ρ[ki]
-    @views θi = nearest_angle(R, Z, shot.surfaces[:, ki])
-    return ki, ρi, θi, ko, ρo, θo
+    return_θ && return θ
+
+    Rx = MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, shot._cx[tid], shot._sx[tid], ax)
+    Zx = MillerExtendedHarmonic.Z_MXH(θ, Z0x, κx, ax)
+    Δ = R < R_at_Zext ? R - Rx : Rx - R
+    Δ -= abs(Z-Zx)
+    return Δ
 end
 
-
-function θr_oi(θo, θi, c0, shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid = Threads.threadid())
-
-    θro = θo + c0
-    θri = θi + c0
-    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
-    @inbounds for m in eachindex(shot._cx[tid])
-        C = shot._cx[tid][m]
-        S = shot._sx[tid][m]
-        scm = sincos(m * θo)
-        θro += S * scm[1] + C * scm[2]
-        scm = sincos(m * θi)
-        θri += S * scm[1] + C * scm[2]
-    end
-    return θro, θri
-end
-
-function res_find_ρ(ρ::Real, shot::Shot, R::Real, Z::Real; return_θ=false)
-
-    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.R0fe.x, ρ)
-    R0 = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    Z0 = evaluate_inbounds(shot.Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    ϵ = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    κ = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-
-    a = R0 * ϵ
-    b = κ * a
-
-    dZ = (Z0 - Z)
-    aa = dZ / b
-    aa = min(1.0, max(-1.0, aa))
-    θo = asin(aa)
-    signθ = θo < 0.0 ? -1.0 : 1.0
-    θi = signθ * π - θo
-
-    c0 = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-
-    θro, θri = θr_oi(θo, θi, c0, shot, k, nu_ou, nu_eu, nu_ol, nu_el)
-
-    Ro = R0 + a * cos(θro)
-    Ri = R0 + a * cos(θri)
-
-    reso =  Ro - R
-    resi =  Ri - R
-    sign_res = sign(reso) * sign(resi)
-    if abs(reso) < abs(resi)
-        return return_θ ? θo : sign_res * abs(reso)
-    end
-    return return_θ ? θi : sign_res * abs(resi)
-end
-
-function res_zext(ρ::Real, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, Z::Real)
-    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(R0fe.x, ρ)
-    R0 = evaluate_inbounds(R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    Z0 = evaluate_inbounds(Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    ϵ = evaluate_inbounds(ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    κ = evaluate_inbounds(κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    b = R0 * ϵ * κ
-    return Z0 + sign(Z-Z0) * b - Z
-end
-
-function res_zext(ρ::Real, shot::Shot, Z::Real)
-    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.R0fe.x, ρ)
-    R0 = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    Z0 = evaluate_inbounds(shot.Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    ϵ = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    κ = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    b = R0 * ϵ * κ
-    return Z0 + sign(Z-Z0) * b - Z
-end
-
-function ρθ_approx(shot::Shot, R::Real, Z::Real)
-
-    ki, ρi, θi, ko, ρo, θo = surface_bracket(shot, R, Z)
-    ki==ko && return ρo, θo # on a surface exactly
-
-    @views So = shot.surfaces[:, ko]
-    Ro = R_MXH(θo, So)
-    Zo = Z_MXH(θo, So)
-
-    Δo = sqrt((R - Ro)^2 + (Z - Zo)^2)
-
-    @views Si = shot.surfaces[:, ki]
-    Ri = R_MXH(θi, Si)
-    Zi = Z_MXH(θi, Si)
-    Δi = sqrt((R - Ri)^2 + (Z - Zi)^2)
-
-    # linearly interpolate in Δ
-    invΔ = 1.0 / (Δi + Δo)
-    ρ = (ρo * Δi + ρi * Δo) * invΔ
-    θ = (θo * Δi + θi * Δo) * invΔ
-    return ρ, θ
-end
-
-function ρθ_RZ(shot::Shot, R::Real, Z::Real)
-
-    ki, ρi, θi, ko, ρo, θo = surface_bracket(shot, R, Z)
-    ki==ko && return ρo, θo # on a surface exactly
-    if abs(θi) == 0.5 * π
-        # find ρ where Z = Zext
-        f_zext(x) = res_zext(x, shot, Z)^2
-        ρi = optimize(f_zext, ρi, ρo).minimizer
-        #ρi = Roots.secant_method(f_zext, (ρi, ρo))
-    end
-    f_find_ρ(x) = res_find_ρ(x, shot, R, Z)^2
-    ρ = optimize(f_find_ρ, ρi, ρo).minimizer
-    #ρ = Roots.secant_method(f_find_ρ, (ρi, ρo))
-    # x0 = (ρi, ρo)
-    # M = Secant()
-    # ZP = ZeroProblem(f_find_ρ, x0)
-    # ρ = solve(ZP, M)
-
-    θ = res_find_ρ(ρ, shot, R, Z, return_θ=true)
-
+function ρθ_RZ(shot, R, Z)
+    f(x) = Δ(shot, x, R, Z)
+    ρ = f(1.0) < 0.0 ? 1.0 : Roots.find_zero(f, (0,1), Roots.A42())
+    θ = (ρ == 0.0) ? 0.0 : Δ(shot, ρ, R, Z; return_θ = true)
     return ρ, θ
 end
 

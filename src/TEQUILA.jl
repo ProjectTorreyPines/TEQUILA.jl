@@ -13,6 +13,7 @@ import MXHEquilibrium: identify_cocos, transform_cocos, efit, AbstractEquilibriu
 using RecipesBase
 import PlotUtils: cgrad
 import QuadGK:quadgk
+import Roots
 #using Memoize
 
 const halfpi = 0.5 * π
@@ -21,7 +22,7 @@ const μ₀ = 4e-7*π
 const lower_2 = zeros(2)
 const upper_2 = zeros(2)
 const x0_2 = zeros(2)
-const Ncntr = 801
+const Ncntr = 129
 const Ψcntr = zeros(Ncntr, Ncntr)
 
 include("initialize.jl")
@@ -44,7 +45,7 @@ include("GS.jl")
 export preallocate_Astar, define_Astar, define_Astar!, set_bc!, define_B, define_B!
 
 include("fsa.jl")
-export FSA, Vprime, fsa_invR2
+export FSA, Vprime, fsa_invR2, fsa_invR, Ip
 
 include("solve.jl")
 export solve

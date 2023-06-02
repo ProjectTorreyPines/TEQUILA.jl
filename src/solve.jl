@@ -1,32 +1,7 @@
 function solve(shot::Shot, its::Integer;
-               dp_dψ=nothing, f_df_dψ=nothing, Jt_R=nothing, pbnd=nothing, fbnd=nothing, debug=false)
-
-    pprime = dp_dψ  !== nothing ? dp_dψ   : deepcopy(shot.dp_dψ)
-
-    ffprim = nothing
-    jtor   = nothing
-    if f_df_dψ !== nothing && Jt_r !== nothing
-        throw(ErrorException("Must specify only one of the following: f_df_dψ, Jt_R"))
-    elseif f_df_dψ !== nothing
-        ffprim = f_df_dψ
-        jtor = nothing
-    elseif Jt_R !== nothing
-        ffprim = nothing
-        jtor = Jt_R
-    else
-        ffprim = deepcopy(shot.f_df_dψ)
-        jtor = deepcopy(shot.Jt_R)
-    end
-
-    pb  = pbnd !== nothing ? pbnd : shot.pbnd
-    fb  = fbnd !== nothing ? fbnd : shot.fbnd
-
-    @assert pprime !== nothing
-    @assert (ffprim !== nothing) ⊻ (jtor !== nothing)
-    @assert pb !== nothing
-    @assert fb !== nothing
-
-    refill = Shot(shot; dp_dψ = pprime, f_df_dψ = ffprim, Jt_R = jtor, pbnd = pb, fbnd = fb)
+               P=nothing, dP_dψ=nothing, F_dF_dψ=nothing, Jt_R=nothing, Jt=nothing,
+               Pbnd=shot.Pbnd, Fbnd=shot.Fbnd, debug=false)
+    refill = Shot(shot; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd)
     return solve!(refill, its; debug)
 end
 
@@ -41,6 +16,9 @@ function solve!(refill::Shot, its::Integer; debug=false)
         _, _, Ψold = find_axis(refill)
     end
     for i in 1:its
+        if refill.Ip_target !== nothing
+            scale_Ip!(refill)
+        end
         define_Astar!(A, refill, Fis, dFis, Fos, Ps)
         define_B!(B, refill, Fis[1], Fos[1], Ps[1])
         set_bc!(refill, A, B)
@@ -61,4 +39,29 @@ function solve!(refill::Shot, its::Integer; debug=false)
         end
     end
     return refill
+end
+
+function scale_Ip!(shot)
+
+    (shot.Ip_target === nothing) && return
+
+    I_c = Ip(shot)
+
+    if shot.Jt_R !== nothing
+        Jt_R = deepcopy(shot.Jt_R)
+        Jt_R.coeffs  .*= shot.Ip_target / I_c
+        shot.Jt_R = Jt_R
+    elseif shot.Jt !== nothing
+        Jt = deepcopy(shot.Jt)
+        Jt.coeffs  .*= shot.Ip_target / I_c
+        shot.Jt = Jt
+    else
+        ΔI = shot.Ip_target - I_c
+        If_c = Ip_ffp(shot)
+        f = 1 + ΔI / If_c
+        F_dF_dψ = deepcopy(shot.F_dF_dψ)
+        F_dF_dψ.coeffs  .*= f
+        shot.F_dF_dψ = F_dF_dψ
+    end
+    return
 end

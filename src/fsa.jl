@@ -114,15 +114,15 @@ function fsa_invR2(shot, ρ; tid = Threads.threadid())
     return FSA(f, shot, ρ)
 end
 
-function fsa_invR(shot, ρ)
+function fsa_invR(shot, ρ; tid = Threads.threadid())
     k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
     R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
     ax = R0x * ϵx
 
-    f(θ) = MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, shot._cx, shot._sx, ax) ^ -1
+    f(θ) = MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, shot._cx[tid], shot._sx[tid], ax) ^ -1
 
     return FSA(f, shot, ρ)
 end

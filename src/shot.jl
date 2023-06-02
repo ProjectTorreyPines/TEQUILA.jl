@@ -4,7 +4,7 @@ const IpType = Union{Nothing, Real}
 mutable struct Shot{I1<:Integer, VR1<:AbstractVector{<:Real}, MR1<:AbstractMatrix{<:Real}, MR2<:AbstractMatrix{<:Real},
                     PT1<:ProfType, PT2<:ProfType, PT3<:ProfType, PT4<:ProfType, PT5<:ProfType,
                     R1<:Real, R2<:Real, IP1<:IpType,
-                    FE1<:FE_rep, VFE1<:AbstractVector{<:FE_rep}, VR2<:AbstractVector{<:Real}, F1<:Factorization}  <: AbstractEquilibrium
+                    FE1<:FE_rep, VFE1<:AbstractVector{<:FE_rep}, VVR1<:Vector{<:AbstractVector{<:Real}}, F1<:Factorization}  <: AbstractEquilibrium
     N :: I1
     M :: I1
     ρ :: VR1
@@ -25,10 +25,10 @@ mutable struct Shot{I1<:Integer, VR1<:AbstractVector{<:Real}, MR1<:AbstractMatri
     c0fe::FE1
     cfe :: VFE1
     sfe :: VFE1
-    _cx :: VR2
-    _sx :: VR2
-    _dcx :: VR2
-    _dsx :: VR2
+    _cx :: VVR1
+    _sx :: VVR1
+    _dcx :: VVR1
+    _dsx :: VVR1
     _Afac :: F1
 end
 
@@ -49,7 +49,7 @@ function compute_Cmatrix!(C::AbstractMatrix{<:Real}, N :: Integer, M :: Integer,
         @views θFD_ρIP_f_nu!(C[2j  , :], Ψ_ρθ, νe, j, ρ, M, Fi, Fo, P)
     end
     ldiv!(Afac, C)
-    C[end,:] .= 0.0 # Ensures psi=0 on boundary
+    @views C[end,:] .= 0.0 # Ensures psi=0 on boundary
     return C
 end
 
@@ -178,10 +178,10 @@ function Shot(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, surfaces::Abst
               F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
               Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing)
     L = length(cfe)
-    cx = zeros(L)
-    sx = zeros(L)
-    dcx = zeros(L)
-    dsx = zeros(L)
+    cx = [zeros(L) for _ in 1:Threads.nthreads()]
+    sx = deepcopy(cx)
+    dcx = deepcopy(cx)
+    dsx = deepcopy(cx)
     Shot(N, M, ρ, surfaces, C, P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target,
          R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, cx, sx, dcx, dsx, Afac)
 end
@@ -434,7 +434,7 @@ function ∇psi(shot::Shot, ρ, θ, bases_Dbases = compute_both_bases(shot.ρ, �
     return dpsi_dρ(shot, ρ, θ, D_bases), dpsi_dθ(shot, ρ, θ, bases)
 end
 
-function MXHEquilibrium.psi_gradient(shot::Shot, R, Z)
+function MXHEquilibrium.psi_gradient(shot::Shot, R, Z; tid = Threads.threadid())
 
     ρ, θ = ρθ_RZ(shot, R, Z)
 
@@ -446,20 +446,20 @@ function MXHEquilibrium.psi_gradient(shot::Shot, R, Z)
     ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
 
     dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
 
-    R_ρ = MillerExtendedHarmonic.dR_dρ(θ, R0x, ϵx, c0x, shot._cx, shot._sx, dR0x, dϵx, dc0x, shot._dcx, shot._dsx)
-    R_θ = MillerExtendedHarmonic.dR_dθ(θ, R0x, ϵx, c0x, shot._cx, shot._sx)
+    R_ρ = MillerExtendedHarmonic.dR_dρ(θ, R0x, ϵx, c0x, shot._cx[tid], shot._sx[tid], dR0x, dϵx, dc0x, shot._dcx[tid], shot._dsx[tid])
+    R_θ = MillerExtendedHarmonic.dR_dθ(θ, R0x, ϵx, c0x, shot._cx[tid], shot._sx[tid])
     Z_ρ = MillerExtendedHarmonic.dZ_dρ(θ, R0x, ϵx, κx, dR0x, dZ0x, dϵx, dκx)
     Z_θ = MillerExtendedHarmonic.dZ_dθ(θ, R0x, ϵx, κx)
-    R_J = R / MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, shot._cx, shot._sx, dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx, shot._dsx)
+    R_J = R / MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, shot._cx[tid], shot._sx[tid], dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx[tid], shot._dsx[tid])
 
     Ψ_ρ, Ψ_θ = ∇psi(shot, ρ, θ, bases_Dbases)
 

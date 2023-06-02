@@ -15,6 +15,15 @@ function fft_prealloc(M::Integer)
     return Fi, dFi, Fo, P
 end
 
+function fft_prealloc_threaded(M::Integer)
+    ctype = typeof(Complex(0.0))
+    Fis  = [zeros(ctype, 2M+4)  for _ in 1:Threads.nthreads()]
+    dFis = [zeros(ctype, 2M+4) for _ in 1:Threads.nthreads()]
+    Fos  = [Vector{ctype}(undef, 2M+4) for _ in 1:Threads.nthreads()]
+    Ps   = [plan_fft(zeros(ctype, 2M+4))  for _ in 1:Threads.nthreads()]
+    return Fis, dFis, Fos, Ps
+end
+
 function fourier_decompose(f, M::Integer; fft_op::Union{Nothing, Symbol}=nothing)
     CS = zeros(2M + 1)
     Fi, _, Fo, P = fft_prealloc(M)

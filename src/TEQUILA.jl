@@ -14,7 +14,7 @@ using RecipesBase
 import PlotUtils: cgrad
 import QuadGK:quadgk
 import Roots
-#using Memoize
+using PreallocationTools
 
 const halfpi = 0.5 * π
 const twopi = 2π

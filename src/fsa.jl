@@ -131,10 +131,16 @@ function FE_fsa(shot, fsa, coeffs = Vector{typeof(shot.ρ[1])}(undef, 2*length(s
     for (i, x) in enumerate(shot.ρ)
         # BCL 4/26/23: I'd like to use ForwardDiff here, but the use of intermediate arrays
         #              in evaluate_csx!() prevents that
-        xp = x==shot.ρ[end] ? 1.0 : x + ε * (shot.ρ[i+1] - shot.ρ[i])
-        xm = x==shot.ρ[1]   ? 0.0 : x - ε * (shot.ρ[i] - shot.ρ[i-1])
-        coeffs[2i-1] = (fsa(shot, xp) - fsa(shot, xm)) / (xp - xm)
-        coeffs[2i] = fsa(shot, x)
+        # BCL 6/2/23: Can use ForwardDiff now but it gives slightly different results,
+        #             maybe due to issues at boundary? Don't know what is best but
+        #             going with ForwardDiff
+        f(x) = fsa(shot, x)
+        if x == 0.0
+            coeffs[2i-1] = PreallocationTools.ForwardDiff.derivative(f, 1e-12)
+        else
+            coeffs[2i-1] = PreallocationTools.ForwardDiff.derivative(f, x)
+        end
+        coeffs[2i] = f(x)
     end
     return FE_rep(shot.ρ, coeffs)
 end
@@ -149,10 +155,16 @@ function Ip(shot; ε = 1e-6)
     for (i, x) in enumerate(shot.ρ)
         # BCL 4/26/23: I'd like to use ForwardDiff here, but the use of intermediate arrays
         #              in evaluate_csx!() prevents that
-        xp = x==shot.ρ[end] ? 1.0 : x + ε * (shot.ρ[i+1] - shot.ρ[i])
-        xm = x==shot.ρ[1]   ? 0.0 : x - ε * (shot.ρ[i] - shot.ρ[i-1])
-        coeffs[2i-1] = (Vprime(shot, xp) - Vprime(shot, xm)) / (xp - xm)
-        coeffs[2i] = Vprime(shot, x)
+        # BCL 6/2/23: Can use ForwardDiff now but it gives slightly different results,
+        #             maybe due to issues at boundary? Don't know what is best but
+        #             going with ForwardDiff
+        f(x) = Vprime(shot, x)
+        if x == 0.0
+            coeffs[2i-1] = PreallocationTools.ForwardDiff.derivative(f, 1e-12)
+        else
+            coeffs[2i-1] = PreallocationTools.ForwardDiff.derivative(f, x)
+        end
+        coeffs[2i] = f(x)
     end
     Vp = FE_rep(shot.ρ, coeffs)
     if shot.Jt_R !== nothing

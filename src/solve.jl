@@ -30,9 +30,8 @@ function solve!(refill::Shot, its::Integer; debug=false)
 
         # Using ρ = rho poloidal (sqrt((Ψ-Ψaxis)/sqrt(Ψbnd-Ψaxis)))
         levels = Ψaxis .* (1.0 .- refill.ρ.^2)
-        #levels = Ψaxis .* (1.0 .- refill.ρ) .^0.5
 
-        refill = refit(refill, levels)
+        refill = refit(refill, levels, Ψaxis)
         if debug
             println("Iteration ", i, ": Ψaxis = ", Ψaxis, ", Error: ", abs(Ψaxis-Ψold))
             Ψold = Ψaxis

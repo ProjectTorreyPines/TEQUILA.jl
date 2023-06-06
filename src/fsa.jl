@@ -19,16 +19,16 @@ function Vprime(shot::Shot, ρ::Real; tid = Threads.threadid())
     ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
+    cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
 
     dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
+    dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
 
-    J(θ) = MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, shot._cx[tid], shot._sx[tid], dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx[tid], shot._dsx[tid])
+    J(θ) = MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx)
     return twopi * trapa(J)
 end
 
@@ -41,16 +41,16 @@ function FSA(f, shot::Shot, ρ::Real; tid = Threads.threadid())
     ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
+    cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
 
     dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
+    dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
 
-    J(θ) = MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, shot._cx[tid], shot._sx[tid], dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx[tid], shot._dsx[tid])
+    J(θ) = MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx)
     Jf(θ) = f(θ) * J(θ)
     return trapa(Jf) / trapa(J)
 end
@@ -64,17 +64,17 @@ function FSA(f, shot::Shot, ρ::Real, Vprime::FE_rep; tid = Threads.threadid())
     ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
+    cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
 
     dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
+    dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
 
     Vp = evaluate_inbounds(Vprime, k, nu_ou, nu_eu, nu_ol, nu_el)
-    Jf(θ) = f(θ) * MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, shot._cx[tid], shot._sx[tid], dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx[tid], shot._dsx[tid])
+    Jf(θ) = f(θ) * MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx)
 
     return twopi * trapa(Jf) / Vp
 end
@@ -88,16 +88,16 @@ function FSA(f, shot::Shot, ρ::Real, Vprime::Real; tid = Threads.threadid())
     ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
+    cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
 
     dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
+    dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
 
-    Jf(θ) = f(θ) * MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, shot._cx[tid], shot._sx[tid], dR0x, dZ0x, dϵx, dκx, dc0x, shot._dcx[tid], shot._dsx[tid])
+    Jf(θ) = f(θ) * MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx)
     return twopi * trapa(Jf) / Vprime
 end
 
@@ -106,10 +106,10 @@ function fsa_invR2(shot, ρ; tid = Threads.threadid())
     R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
+    cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
     ax = R0x * ϵx
 
-    f(θ) = MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, shot._cx[tid], shot._sx[tid], ax) ^ -2
+    f(θ) = MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, cx, sx, ax) ^ -2
 
     return FSA(f, shot, ρ)
 end
@@ -119,10 +119,10 @@ function fsa_invR(shot, ρ; tid = Threads.threadid())
     R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
+    cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
     ax = R0x * ϵx
 
-    f(θ) = MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, shot._cx[tid], shot._sx[tid], ax) ^ -1
+    f(θ) = MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, cx, sx, ax) ^ -1
 
     return FSA(f, shot, ρ)
 end
@@ -131,10 +131,16 @@ function FE_fsa(shot, fsa, coeffs = Vector{typeof(shot.ρ[1])}(undef, 2*length(s
     for (i, x) in enumerate(shot.ρ)
         # BCL 4/26/23: I'd like to use ForwardDiff here, but the use of intermediate arrays
         #              in evaluate_csx!() prevents that
-        xp = x==shot.ρ[end] ? 1.0 : x + ε * (shot.ρ[i+1] - shot.ρ[i])
-        xm = x==shot.ρ[1]   ? 0.0 : x - ε * (shot.ρ[i] - shot.ρ[i-1])
-        coeffs[2i-1] = (fsa(shot, xp) - fsa(shot, xm)) / (xp - xm)
-        coeffs[2i] = fsa(shot, x)
+        # BCL 6/2/23: Can use ForwardDiff now but it gives slightly different results,
+        #             maybe due to issues at boundary? Don't know what is best but
+        #             going with ForwardDiff
+        f(x) = fsa(shot, x)
+        if x == 0.0
+            coeffs[2i-1] = PreallocationTools.ForwardDiff.derivative(f, 1e-12)
+        else
+            coeffs[2i-1] = PreallocationTools.ForwardDiff.derivative(f, x)
+        end
+        coeffs[2i] = f(x)
     end
     return FE_rep(shot.ρ, coeffs)
 end
@@ -149,10 +155,16 @@ function Ip(shot; ε = 1e-6)
     for (i, x) in enumerate(shot.ρ)
         # BCL 4/26/23: I'd like to use ForwardDiff here, but the use of intermediate arrays
         #              in evaluate_csx!() prevents that
-        xp = x==shot.ρ[end] ? 1.0 : x + ε * (shot.ρ[i+1] - shot.ρ[i])
-        xm = x==shot.ρ[1]   ? 0.0 : x - ε * (shot.ρ[i] - shot.ρ[i-1])
-        coeffs[2i-1] = (Vprime(shot, xp) - Vprime(shot, xm)) / (xp - xm)
-        coeffs[2i] = Vprime(shot, x)
+        # BCL 6/2/23: Can use ForwardDiff now but it gives slightly different results,
+        #             maybe due to issues at boundary? Don't know what is best but
+        #             going with ForwardDiff
+        f(x) = Vprime(shot, x)
+        if x == 0.0
+            coeffs[2i-1] = PreallocationTools.ForwardDiff.derivative(f, 1e-12)
+        else
+            coeffs[2i-1] = PreallocationTools.ForwardDiff.derivative(f, x)
+        end
+        coeffs[2i] = f(x)
     end
     Vp = FE_rep(shot.ρ, coeffs)
     if shot.Jt_R !== nothing

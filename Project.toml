@@ -4,7 +4,6 @@ authors = ["Brendan C. Lyons <bclyons12@gmail.com> and contributors"]
 version = "0.1.0"
 
 [deps]
-Contour = "d38c429a-6771-53c6-b99e-75d170b6e991"
 FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
 FiniteElementHermite = "6ce10167-d368-4c0e-af34-9787cdd175e5"
 JuMP = "4076af6c-e467-56ae-b986-b466b2749572"

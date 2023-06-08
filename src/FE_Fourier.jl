@@ -34,8 +34,7 @@ function fourier_decompose!(CS::AbstractVector{<:Real}, f, M::Integer,
                             Fi::AbstractVector{<:Complex}, Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan;
                             reset_CS = false, fft_op::Union{Nothing, Symbol}=nothing)
     invM2 = 1.0 / (M + 2)
-    Δθ = π * invM2
-    x = 0.0:Δθ:(2π-Δθ)
+    x = range(0,twopi, 2M+5)[1:end-1]
     for (k, θ) in enumerate(x)
         Fi[k] = f(θ)
     end
@@ -63,8 +62,7 @@ function dual_fourier_decompose!(CS::AbstractVector{<:Real}, f, M::Integer,
     reset_CS && (CS .= 0.0)
 
     invM2 = 1.0 / (M + 2)
-    Δθ = π * invM2
-    x = 0.0:Δθ:(2π-Δθ)
+    x = range(0, twopi, 2M+5)[1:end-1]
 
     for (k, θ) in enumerate(x)
         Fi[k], dFi[k] = f(θ)

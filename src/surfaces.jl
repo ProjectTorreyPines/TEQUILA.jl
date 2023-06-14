@@ -21,6 +21,23 @@ function scale_surface!(surface::MXH, x::Real; Raxis::Real = surface.R0, Zaxis::
     return surface
 end
 
+function concentric_surface!(surface::AbstractVector{<:Real}, x::Real, boundary::AbstractVector{<:Real}; Raxis::Real = boundary[1], Zaxis::Real = boundary[2])
+    surface .= boundary
+    return scale_surface!(surface, x; Raxis, Zaxis)
+end
+
+function scale_surface!(surface::AbstractVector{<:Real}, x::Real; Raxis::Real = surface[1], Zaxis::Real = surface[2])
+    # these go to zero as you go to axis
+    a = surface[1] * surface[3] * x
+    surface[1] = x * surface[1] + (1.0 - x) * Raxis
+    surface[2] = x * surface[2] + (1.0 - x) * Zaxis
+    surface[3]  = a / surface[1]
+    if x < 1.0
+        surface[6:end] .*= x
+    end
+    return surface
+end
+
 function surfaces_FE(shot::Shot)
     surfaces_FE(shot.ρ, shot.surfaces)
 end

@@ -119,7 +119,7 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH;
              F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
              Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing)
 
-    ρ = sqrt.(range(0, 1, N))
+    ρ = range(0, 1, N)
 
     L = length(boundary.c)
     surfaces = zeros(5 + 2L, N)
@@ -141,7 +141,7 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ::FE_rep;
              F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
              Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing)
 
-    ρ = sqrt.(range(0, 1, N))
+    ρ = range(0, 1, N)
 
     L = length(boundary.c)
     surfaces = zeros(5 + 2L, N)

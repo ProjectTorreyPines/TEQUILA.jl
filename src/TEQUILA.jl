@@ -8,13 +8,14 @@ using LinearAlgebra
 using StaticArrays
 using Optim
 using SparseArrays
-using Contour
 import MXHEquilibrium: identify_cocos, transform_cocos, efit, AbstractEquilibrium, MXHEquilibrium
 using RecipesBase
 import PlotUtils: cgrad
 import QuadGK:quadgk
 import Roots
 using PreallocationTools
+using JuMP
+import NLopt
 
 const halfpi = 0.5 * π
 const twopi = 2π
@@ -22,8 +23,6 @@ const μ₀ = 4e-7*π
 const lower_2 = zeros(2)
 const upper_2 = zeros(2)
 const x0_2 = zeros(2)
-const Ncntr = 129
-const Ψcntr = zeros(Ncntr, Ncntr)
 
 include("initialize.jl")
 export Ψmiller

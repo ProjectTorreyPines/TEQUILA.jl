@@ -16,25 +16,34 @@ function solve!(refill::Shot, its::Integer; debug=false)
         _, _, Ψold = find_axis(refill)
     end
     for i in 1:its
+        debug && println("ITERATION $i")
         if refill.Ip_target !== nothing
             scale_Ip!(refill)
         end
         define_Astar!(A, refill, Fis, dFis, Fos, Ps)
         define_B!(B, refill, Fis[1], Fos[1], Ps[1])
         set_bc!(refill, A, B)
-
         C = A \ B
         refill.C .= transpose(reshape(C, (2*refill.M + 1, 2*refill.N)))
         refill.C[end, :] .= 0.0 #ensure psi=0 on boundary
-        _, _, Ψaxis = find_axis(refill)
+        Raxis, Zaxis, Ψaxis = find_axis(refill)
 
-        # Using ρ = rho poloidal (sqrt((Ψ-Ψaxis)/sqrt(Ψbnd-Ψaxis)))
-        levels = Ψaxis .* (1.0 .- refill.ρ.^2)
-        #levels = Ψaxis .* (1.0 .- refill.ρ) .^0.5
+        if i == 1 && its != 1
+            debug && println("    Concentric surfaces used for first iteration")
+            refill = refit_concentric(refill, Raxis, Zaxis)
+        else
+            (debug && i == 1) && println("    Trying full refit for first iteration")
+            try
+                refill = refit(refill, Ψaxis, Raxis, Zaxis)
+            catch err
+                isa(err, InterruptException) && rethrow(err)
+                println("    Warning: Fell back to concentric surfaces due to ", typeof(err))
+                refill = refit_concentric(refill, Raxis, Zaxis)
+            end
+        end
 
-        refill = refit(refill, levels)
         if debug
-            println("Iteration ", i, ": Ψaxis = ", Ψaxis, ", Error: ", abs(Ψaxis-Ψold))
+            println("    Status: Ψaxis = $Ψaxis, Error: ", abs((Ψaxis-Ψold)/Ψaxis))
             Ψold = Ψaxis
         end
     end

@@ -1,11 +1,11 @@
-function solve(shot::Shot, its::Integer; tol::Real=0.0, debug::Bool=false,
+function solve(shot::Shot, its::Integer; tol::Real=0.0, debug::Bool=false, fit_fallback::Bool=true,
                P=nothing, dP_dψ=nothing, F_dF_dψ=nothing, Jt_R=nothing, Jt=nothing,
                Pbnd=shot.Pbnd, Fbnd=shot.Fbnd)
     refill = Shot(shot; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd)
-    return solve!(refill, its; tol, debug)
+    return solve!(refill, its; tol, debug, fit_fallback)
 end
 
-function solve!(refill::Shot, its::Integer; tol::Real=0.0, debug::Bool=false)
+function solve!(refill::Shot, its::Integer; tol::Real=0.0, debug::Bool=false, fit_fallback::Bool=true)
     Fis, dFis, Fos, Ps = fft_prealloc_threaded(refill.M)
     A = preallocate_Astar(refill)
     L = 2 * refill.N * (2 * refill.M + 1)
@@ -38,7 +38,7 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, debug::Bool=false)
                 refill = refit(refill, Ψaxis, Raxis, Zaxis)
                 warn_concentric = false
             catch err
-                isa(err, InterruptException) && rethrow(err)
+                (isa(err, InterruptException) || !fit_fallback) && rethrow(err)
                 warn_concentric = true
                 if debug
                     println("    Warning: Fit for iteration $i fell back to concentric surfaces due to ", typeof(err))

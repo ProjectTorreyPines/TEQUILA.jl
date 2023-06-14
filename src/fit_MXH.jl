@@ -6,6 +6,12 @@ function valid_extrema(Rmax, Z_at_Rmax, Rmin, Z_at_Rmin, R_at_Zmax, Zmax, R_at_Z
     return true
 end
 
+function residual_extrema(shot, lvl, Rmax, Z_at_Rmax, Rmin, Z_at_Rmin, R_at_Zmax, Zmax, R_at_Zmin, Zmin)
+    res =  (shot(Rmax, Z_at_Rmax) - lvl) ^ 2 + (shot(Rmin, Z_at_Rmin) - lvl) ^ 2
+    res += (shot(R_at_Zmax, Zmax) - lvl) ^ 2 + (shot(R_at_Zmin, Zmin) - lvl) ^ 2
+    return sqrt(res / lvl^2)
+end
+
 function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real, ρaxis::Real; algorithm::Symbol=:LD_SLSQP)
 
     model = Model(NLopt.Optimizer)
@@ -258,9 +264,27 @@ end
 function fit_MXH!(flat, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fi, Fo, P)
 
     Rmax, Z_at_Rmax, Rmin, Z_at_Rmin, R_at_Zmax, Zmax, R_at_Zmin, Zmin  = find_extrema(shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis; algorithm = :LD_SLSQP)
+
+    res = residual_extrema(shot, lvl, Rmax, Z_at_Rmax, Rmin, Z_at_Rmin, R_at_Zmax, Zmax, R_at_Zmin, Zmin)
+
     if !valid_extrema(Rmax, Z_at_Rmax, Rmin, Z_at_Rmin, R_at_Zmax, Zmax, R_at_Zmin, Zmin)
         Rmax, Z_at_Rmax, Rmin, Z_at_Rmin, R_at_Zmax, Zmax, R_at_Zmin, Zmin = find_extrema_RZ(shot, lvl, Raxis, Zaxis)
+    elseif res > 1e-6
+        Rmax2, Z_at_Rmax2, Rmin2, Z_at_Rmin2, R_at_Zmax2, Zmax2, R_at_Zmin2, Zmin2 = find_extrema_RZ(shot, lvl, Raxis, Zaxis)
+        if abs(shot(Rmax2, Z_at_Rmax2) - lvl) < abs(shot(Rmax, Z_at_Rmax) - lvl)
+            Rmax, Z_at_Rmax = Rmax2, Z_at_Rmax2
+        end
+        if abs(shot(Rmin2, Z_at_Rmin2) - lvl) < abs(shot(Rmin, Z_at_Rmin) - lvl)
+            Rmin, Z_at_Rmin  = Rmin2, Z_at_Rmin2
+        end
+        if abs(shot(R_at_Zmax2, Zmax2) - lvl) < abs(shot(R_at_Zmax, Zmax) - lvl)
+            R_at_Zmax, Zmax = R_at_Zmax2, Zmax2
+        end
+        if abs(shot(R_at_Zmin2, Zmin2) - lvl) < abs(shot(R_at_Zmin, Zmin) - lvl)
+            R_at_Zmin, Zmin = R_at_Zmin2, Zmin2
+        end
     end
+
     @assert valid_extrema(Rmax, Z_at_Rmax, Rmin, Z_at_Rmin, R_at_Zmax, Zmax, R_at_Zmin, Zmin)
 
     R0 = 0.5 * (Rmax + Rmin)

@@ -7,20 +7,20 @@ Decompose f(θ) into a Fourier series with m from 0 to M
 Returns cosine coeffients and sine coefficients as tuple
 """
 function fft_prealloc(M::Integer)
-    ctype = typeof(Complex(0.0))
-    Fi = zeros(ctype, 2M+4)
-    dFi = zeros(ctype, 2M+4)
-    Fo = Vector{ctype}(undef, 2M+4)
+    tmp = zeros(2M+4)
+    Fi = complex(tmp)
+    dFi = complex(tmp)
+    Fo = complex(tmp)
     P = plan_fft(Fi)
     return Fi, dFi, Fo, P
 end
 
 function fft_prealloc_threaded(M::Integer)
-    ctype = typeof(Complex(0.0))
-    Fis  = [zeros(ctype, 2M+4)  for _ in 1:Threads.nthreads()]
-    dFis = [zeros(ctype, 2M+4) for _ in 1:Threads.nthreads()]
-    Fos  = [Vector{ctype}(undef, 2M+4) for _ in 1:Threads.nthreads()]
-    Ps   = [plan_fft(zeros(ctype, 2M+4))  for _ in 1:Threads.nthreads()]
+    tmp = zeros(2M+4)
+    Fis  = [complex(tmp) for _ in 1:Threads.nthreads()]
+    dFis = [complex(tmp) for _ in 1:Threads.nthreads()]
+    Fos  = [complex(tmp) for _ in 1:Threads.nthreads()]
+    Ps   = [plan_fft(complex(tmp))  for _ in 1:Threads.nthreads()]
     return Fis, dFis, Fos, Ps
 end
 

@@ -6,6 +6,11 @@ function solve(shot::Shot, its::Integer; tol::Real=0.0, debug::Bool=false, fit_f
 end
 
 function solve!(refill::Shot, its::Integer; tol::Real=0.0, debug::Bool=false, fit_fallback::Bool=true)
+
+    # validate current
+    I_c = Ip(refill)
+    validate_current(refill; I_c)
+
     Fis, dFis, Fos, Ps = fft_prealloc_threaded(refill.M)
     A = preallocate_Astar(refill)
     L = 2 * refill.N * (2 * refill.M + 1)
@@ -19,7 +24,7 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, debug::Bool=false, fi
     for i in 1:its
         debug && println("ITERATION $i")
         if refill.Ip_target !== nothing
-            scale_Ip!(refill)
+            scale_Ip!(refill; I_c)
         end
         define_Astar!(A, refill, Fis, dFis, Fos, Ps)
         define_B!(B, refill, Fis[1], Fos[1], Ps[1])
@@ -59,17 +64,17 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, debug::Bool=false, fi
 
         if i == its && debug
             println("DONE: maximum iterations")
+            break
         end
+        I_c = Ip(refill)
     end
     warn_concentric && println("WARNING: Final iteration used concentric surfaces and is likely inaccurate")
     return refill
 end
 
-function scale_Ip!(shot)
+function scale_Ip!(shot; I_c = Ip(shot))
 
     (shot.Ip_target === nothing) && return
-
-    I_c = Ip(shot)
 
     if shot.Jt_R !== nothing
         Jt_R = deepcopy(shot.Jt_R)
@@ -86,6 +91,24 @@ function scale_Ip!(shot)
         F_dF_dψ = deepcopy(shot.F_dF_dψ)
         F_dF_dψ.coeffs  .*= f
         shot.F_dF_dψ = F_dF_dψ
+    end
+    return
+end
+
+function validate_current(shot; I_c = Ip(shot))
+    sign_Ip = sign(I_c)
+    if shot.Jt_R !== nothing
+        good_sign = (sign(shot.Jt_R(x)) != -sign_Ip for x in shot.ρ)
+    elseif shot.Jt !== nothing
+        good_sign = (sign(shot.Jt(x)) != -sign_Ip for x in shot.ρ)
+    else
+        invR2 = FE_fsa(shot, fsa_invR2)
+        Pp = Pprime(shot, shot.P, shot.dP_dψ)
+        good_sign = (sign(-(Pp(x) + invR2(x) * shot.F_dF_dψ(x) / μ₀)) != -sign_Ip for x in shot.ρ)
+    end
+    if !all(good_sign)
+        throw(ErrorException("Provided F_dF_dψ, Jt, or Jt_R profile produces regions with current opposite total current\n"*
+                             "       Not allowed since Ψ becomes nonmonotonic - Please correct input profile"))
     end
     return
 end

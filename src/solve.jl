@@ -1,11 +1,11 @@
-function solve(shot::Shot, its::Integer; tol::Real=0.0, debug::Bool=false, fit_fallback::Bool=true,
+function solve(shot::Shot, its::Integer; tol::Real=0.0, relax::Real = 1.0, debug::Bool=false, fit_fallback::Bool=true,
                P=nothing, dP_dψ=nothing, F_dF_dψ=nothing, Jt_R=nothing, Jt=nothing,
-               Pbnd=shot.Pbnd, Fbnd=shot.Fbnd)
-    refill = Shot(shot; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd)
-    return solve!(refill, its; tol, debug, fit_fallback)
+               Pbnd=shot.Pbnd, Fbnd=shot.Fbnd, Ip_target=shot.Ip_target)
+    refill = Shot(shot; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
+    return solve!(refill, its; tol, relax, debug, fit_fallback)
 end
 
-function solve!(refill::Shot, its::Integer; tol::Real=0.0, debug::Bool=false, fit_fallback::Bool=true)
+function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0, debug::Bool=false, fit_fallback::Bool=true)
 
     # validate current
     I_c = Ip(refill)
@@ -21,6 +21,7 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, debug::Bool=false, fi
     if debug
         _, _, Ψold = find_axis(refill)
     end
+
     for i in 1:its
         debug && println("ITERATION $i")
         if refill.Ip_target !== nothing
@@ -29,9 +30,15 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, debug::Bool=false, fi
         define_Astar!(A, refill, Fis, dFis, Fos, Ps)
         define_B!(B, refill, Fis[1], Fos[1], Ps[1])
         set_bc!(refill, A, B)
+
         C = A \ B
-        refill.C .= transpose(reshape(C, (2*refill.M + 1, 2*refill.N)))
+        if i == 1
+            refill.C .= transpose(reshape(C, (2*refill.M + 1, 2*refill.N)))
+        else
+            refill.C .= (1.0-relax) .* refill.C .+ relax .* transpose(reshape(C, (2*refill.M + 1, 2*refill.N)))
+        end
         refill.C[end, :] .= 0.0 #ensure psi=0 on boundary
+
         Raxis, Zaxis, Ψaxis = find_axis(refill)
 
         if i == 1 && its != 1
@@ -66,6 +73,7 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, debug::Bool=false, fi
             println("DONE: maximum iterations")
             break
         end
+
         I_c = Ip(refill)
     end
     warn_concentric && println("WARNING: Final iteration used concentric surfaces and is likely inaccurate")

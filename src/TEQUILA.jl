@@ -16,6 +16,7 @@ import Roots
 using PreallocationTools
 using JuMP
 import NLopt
+import BSON
 
 const halfpi = 0.5 * π
 const twopi = 2π

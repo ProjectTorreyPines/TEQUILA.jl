@@ -24,6 +24,7 @@ const μ₀ = 4e-7*π
 const lower_2 = zeros(2)
 const upper_2 = zeros(2)
 const x0_2 = zeros(2)
+const jump_success = @SVector[JuMP.OPTIMAL, JuMP.LOCALLY_SOLVED]
 
 include("initialize.jl")
 export Ψmiller

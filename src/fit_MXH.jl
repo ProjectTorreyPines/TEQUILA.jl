@@ -16,6 +16,7 @@ function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real,
 
     model = Model(NLopt.Optimizer)
     set_optimizer_attribute(model, "algorithm", algorithm)
+    set_optimizer_attribute(model, "maxtime", 10.0)
     @variable(model, ρ)
     @variable(model, θ)
 
@@ -51,6 +52,7 @@ function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real,
     end
     @NLobjective(model, Max, Zloc(ρ, θ))
     JuMP.optimize!(model)
+    @assert termination_status(model) in jump_success
     ρ_Zmax = value(ρ)
     θ_Zmax = value(θ)
 
@@ -71,6 +73,7 @@ function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real,
     end
     @NLobjective(model, Min, Zloc(ρ, θ))
     JuMP.optimize!(model)
+    @assert termination_status(model) in jump_success
     ρ_Zmin = value(ρ)
     θ_Zmin = value(θ)
 
@@ -91,6 +94,7 @@ function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real,
     end
     @NLobjective(model, Max, Rloc(ρ, θ))
     JuMP.optimize!(model)
+    @assert termination_status(model) in jump_success
     ρ_Rmax = value(ρ)
     θ_Rmax = value(θ)
 
@@ -111,6 +115,7 @@ function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real,
     end
     @NLobjective(model, Min, Rloc(ρ, θ))
     JuMP.optimize!(model)
+    @assert termination_status(model) in jump_success
     ρ_Rmin = value(ρ)
     θ_Rmin = value(θ)
 
@@ -136,6 +141,7 @@ function find_extrema_RZ(shot, level::Real, Raxis::Real, Zaxis::Real)
 
     model = Model(NLopt.Optimizer)
     set_optimizer_attribute(model, "algorithm", :LN_COBYLA)
+    set_optimizer_attribute(model, "maxtime", 10.0)
     @variable(model, R)
     @variable(model, Z)
 
@@ -151,6 +157,7 @@ function find_extrema_RZ(shot, level::Real, Raxis::Real, Zaxis::Real)
     set_start_value(Z, Zaxis)
     @objective(model, Max, Z)
     JuMP.optimize!(model)
+    @assert termination_status(model) in jump_success
     R_at_Zmax = value(R)
     Zmax = value(Z)
 
@@ -163,6 +170,7 @@ function find_extrema_RZ(shot, level::Real, Raxis::Real, Zaxis::Real)
     set_start_value(Z, Zaxis)
     @objective(model, Min, Z)
     JuMP.optimize!(model)
+    @assert termination_status(model) in jump_success
     R_at_Zmin = value(R)
     Zmin = value(Z)
 
@@ -175,6 +183,7 @@ function find_extrema_RZ(shot, level::Real, Raxis::Real, Zaxis::Real)
     set_start_value(Z, Zaxis)
     @objective(model, Max, R)
     JuMP.optimize!(model)
+    @assert termination_status(model) in jump_success
     Rmax = value(R)
     Z_at_Rmax = value(Z)
 
@@ -187,6 +196,7 @@ function find_extrema_RZ(shot, level::Real, Raxis::Real, Zaxis::Real)
     set_start_value(Z, Zaxis)
     @objective(model, Min, R)
     JuMP.optimize!(model)
+    @assert termination_status(model) in jump_success
     Rmin = value(R)
     Z_at_Rmin = value(Z)
 
@@ -330,7 +340,7 @@ function refit(shot::Shot, Ψaxis::Real, Raxis::Real, Zaxis::Real)
     surfaces = deepcopy(shot.surfaces)
 
     ρaxis, _ = ρθ_RZ(shot, Raxis, Zaxis)
-    @Threads.threads for (k, lvl) in @view collect(enumerate(lvls))[2:end-1]
+    Threads.@threads for (k, lvl) in @view collect(enumerate(lvls))[2:end-1]
         tid = Threads.threadid()
         Fi = Fis[tid]
         Fo = Fos[tid]

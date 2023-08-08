@@ -30,14 +30,12 @@ function fourier_decompose(f, M::Integer; fft_op::Union{Nothing, Symbol}=nothing
     return fourier_decompose!(CS, f, M, Fi, Fo, P; fft_op)
 end
 
-function fourier_decompose!(CS::AbstractVector{<:Real}, f, M::Integer,
+function fourier_decompose!(CS::AbstractVector{<:Real}, f::F1, M::Integer,
                             Fi::AbstractVector{<:Complex}, Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan;
-                            reset_CS = false, fft_op::Union{Nothing, Symbol}=nothing)
+                            reset_CS = false, fft_op::Union{Nothing, Symbol}=nothing) where {F1<:Function}
     invM2 = 1.0 / (M + 2)
     x = range(0,twopi, 2M+5)[1:end-1]
-    for (k, θ) in enumerate(x)
-        Fi[k] = f(θ)
-    end
+    @. Fi = f(x)
     mul!(Fo, P, Fi)
 
     reset_CS && (CS .= 0.0)
@@ -83,12 +81,14 @@ end
 
 
 # At fixed θ, give inner product of f(x,θ) and the basis nu(x,k,ρ)
-@inline ρIP(θ, f, nu, k, ρ) = inner_product(x -> f(x, θ), nu, k, ρ, 5)
+@inline function ρIP(θ, f::F1, nu::F2, k, ρ) where {F1<:Union{Function, Shot}, F2<:Function}
+    return inner_product(x -> f(x, θ), nu, k, ρ, int_order)
+end
 
-@inline ρIP(θ, f, nu1, k1, nu2, k2, ρ) = inner_product(x -> f(x, θ), nu1, k1, nu2, k2, ρ, 5)
+@inline ρIP(θ, f, nu1, k1, nu2, k2, ρ) = inner_product(x -> f(x, θ), nu1, k1, nu2, k2, ρ, int_order)
 
 function ρIP(θ, nu1, k1, f, fnu2, g, gnu2, k2, ρ)
-    return inner_product(nu1, k1, x -> f(x, θ), fnu2, x -> g(x, θ), gnu2, k2, ρ, 5)
+    return inner_product(nu1, k1, x -> f(x, θ), fnu2, x -> g(x, θ), gnu2, k2, ρ, int_order)
 end
 
 function ρIP(θ, shot, sym, nu1, k1, fnu2, gnu2, k2, ρ, m)
@@ -105,7 +105,7 @@ function ρIP(θ, shot, sym, nu1, k1, fnu2, gnu2, k2, ρ, m)
             g = m * smt * grt
             return integrand(x, f, g)
         end
-        I = inner_product(int_cs_ρρ_ρθ, k1, k2, ρ, 5)
+        I = inner_product(int_cs_ρρ_ρθ, k1, k2, ρ, int_order)
     elseif sym === :cs_ρθ_θθ
         function int_cs_ρθ_θθ(x)
             grt, gtt = gρθ_gθθ(shot, x, θ)
@@ -113,7 +113,7 @@ function ρIP(θ, shot, sym, nu1, k1, fnu2, gnu2, k2, ρ, m)
             g = m * smt * gtt
             return integrand(x, f, g)
         end
-        I = inner_product(int_cs_ρθ_θθ, k1, k2, ρ, 5)
+        I = inner_product(int_cs_ρθ_θθ, k1, k2, ρ, int_order)
     elseif sym === :sc_ρρ_ρθ
         function int_sc_ρρ_ρθ(x)
             grr, grt = gρρ_gρθ(shot, x, θ)
@@ -121,7 +121,7 @@ function ρIP(θ, shot, sym, nu1, k1, fnu2, gnu2, k2, ρ, m)
             g = -m * cmt * grt
             return integrand(x, f, g)
         end
-        I = inner_product(int_sc_ρρ_ρθ, k1, k2, ρ, 5)
+        I = inner_product(int_sc_ρρ_ρθ, k1, k2, ρ, int_order)
     elseif sym === :sc_ρθ_θθ
         function int_sc_ρθ_θθ(x)
             grt, gtt = gρθ_gθθ(shot, x, θ)
@@ -129,7 +129,7 @@ function ρIP(θ, shot, sym, nu1, k1, fnu2, gnu2, k2, ρ, m)
             g = -m * cmt * gtt
             return integrand(x, f, g)
         end
-        I = inner_product(int_sc_ρθ_θθ, k1, k2, ρ, 5)
+        I = inner_product(int_sc_ρθ_θθ, k1, k2, ρ, int_order)
     end
     return I
 end
@@ -141,7 +141,7 @@ function θFD_ρIP_f_nu(f, nu, k, ρ, M; fft_op::Union{Nothing, Symbol}=nothing)
     return fourier_decompose(g, M; fft_op)
 end
 
-function θFD_ρIP_f_nu!(CS, f, nu, k, ρ, M, Fi, Fo, P; reset_CS = false, fft_op::Union{Nothing, Symbol}=nothing)
+function θFD_ρIP_f_nu!(CS, f::F1, nu::F2, k, ρ, M, Fi, Fo, P; reset_CS = false, fft_op::Union{Nothing, Symbol}=nothing)  where {F1, F2}
     return fourier_decompose!(CS, θ -> ρIP(θ, f, nu, k, ρ), M, Fi, Fo, P; reset_CS, fft_op)
 end
 
@@ -176,15 +176,30 @@ function int_ab(x, fa, ga, fb, gb, nu1, D_nu1, nu2, D_nu2)
     return SVector(I1, I2)
 end
 
+function int_cos(shot, x, θ, ncmt, msmt, nu1, D_nu1, nu2, D_nu2)
+    grr, grt, gtt = gρρ_gρθ_gθθ(shot, x, θ)
+    f = ncmt * grr
+    g = msmt * grt
+    df = ncmt * grt
+    dg = msmt * gtt
+    return int_ab(x, f, g, df, dg, nu1, D_nu1, nu2, D_nu2)
+end
+
+function int_sin(shot, x, θ, nsmt, nmcmt, nu1, D_nu1, nu2, D_nu2)
+    grr, grt, gtt = gρρ_gρθ_gθθ(shot, x, θ)
+    f = nsmt * grr
+    g = nmcmt * grt
+    df = nsmt * grt
+    dg = nmcmt * gtt
+    return int_ab(x, f, g, df, dg, nu1, D_nu1, nu2, D_nu2)
+end
+
 function dual_ρIP(θ, shot, Ftype::Symbol, m::Integer, ν1_type::Symbol, k1, ν2_type::Symbol, k2, ρ)
 
-    nu1(x)   = (ν1_type === :odd) ? νo(x, k1, ρ)   : νe(x, k1, ρ)
-    D_nu1(x) = (ν1_type === :odd) ? D_νo(x, k1, ρ) : D_νe(x, k1, ρ)
-    nu2(x)   = (ν2_type === :odd) ? νo(x, k2, ρ)   : νe(x, k2, ρ)
-    D_nu2(x) = (ν2_type === :odd) ? D_νo(x, k2, ρ) : D_νe(x, k2, ρ)
-
-    #int1(x, f, g) = D_nu1(x) * (f * D_nu2(x) + g * nu2(x))
-    #int2(x, f, g) = nu1(x) * (f * D_nu2(x) + g * nu2(x))
+    nu1   = x -> (ν1_type === :odd) ? νo(x, k1, ρ)   : νe(x, k1, ρ)
+    D_nu1 = x -> (ν1_type === :odd) ? D_νo(x, k1, ρ) : D_νe(x, k1, ρ)
+    nu2   = x -> (ν2_type === :odd) ? νo(x, k2, ρ)   : νe(x, k2, ρ)
+    D_nu2 = x -> (ν2_type === :odd) ? D_νo(x, k2, ρ) : D_νe(x, k2, ρ)
 
     smt, cmt = sincos(m * θ)
 
@@ -193,27 +208,11 @@ function dual_ρIP(θ, shot, Ftype::Symbol, m::Integer, ν1_type::Symbol, k1, ν
     if Ftype === :cos
         ncmt = -cmt
         msmt = m * smt
-        function int_cos(x)
-            grr, grt, gtt = gρρ_gρθ_gθθ(shot, x, θ)
-            f = ncmt * grr
-            g = msmt * grt
-            df = ncmt * grt
-            dg = msmt * gtt
-            return int_ab(x, f, g, df, dg, nu1, D_nu1, nu2, D_nu2)
-        end
-        I, dI = dual_inner_product(int_cos, k1, k2, ρ, 5)
+        I, dI = dual_inner_product(x -> int_cos(shot, x, θ, ncmt, msmt, nu1, D_nu1, nu2, D_nu2), k1, k2, ρ, int_order)
     elseif Ftype === :sin
         nsmt = -smt
         nmcmt = -m * cmt
-        function int_sin(x)
-            grr, grt, gtt = gρρ_gρθ_gθθ(shot, x, θ)
-            f = nsmt * grr
-            g = nmcmt * grt
-            df = nsmt * grt
-            dg = nmcmt * gtt
-            return int_ab(x, f, g, df, dg, nu1, D_nu1, nu2, D_nu2)
-        end
-        I, dI = dual_inner_product(int_sin, k1, k2, ρ, 5)
+        I, dI = dual_inner_product(x -> int_sin(shot, x, θ, nsmt, nmcmt, nu1, D_nu1, nu2, D_nu2), k1, k2, ρ, int_order)
     end
     return I, dI
 end

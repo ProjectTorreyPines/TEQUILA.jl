@@ -25,6 +25,7 @@ const lower_2 = zeros(2)
 const upper_2 = zeros(2)
 const x0_2 = zeros(2)
 const jump_success = @SVector[JuMP.OPTIMAL, JuMP.LOCALLY_SOLVED]
+const int_order = 5
 
 include("initialize.jl")
 export Ψmiller

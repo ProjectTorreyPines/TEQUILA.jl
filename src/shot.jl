@@ -4,7 +4,8 @@ const IpType = Union{Nothing, Real}
 mutable struct Shot{I1<:Integer, VR1<:AbstractVector{<:Real}, MR1<:AbstractMatrix{<:Real}, MR2<:AbstractMatrix{<:Real},
                     PT1<:ProfType, PT2<:ProfType, PT3<:ProfType, PT4<:ProfType, PT5<:ProfType,
                     R1<:Real, R2<:Real, IP1<:IpType,
-                    FE1<:FE_rep, VFE1<:AbstractVector{<:FE_rep}, VDC1<:Vector{<:DiffCache}, F1<:Factorization}  <: AbstractEquilibrium
+                    FE1<:FE_rep, VFE1<:AbstractVector{<:FE_rep}, VDC1<:Vector{<:DiffCache}, F1<:Factorization,
+                    MR3<:AbstractMatrix{<:Real}}  <: AbstractEquilibrium
     N :: I1
     M :: I1
     ρ :: VR1
@@ -30,6 +31,8 @@ mutable struct Shot{I1<:Integer, VR1<:AbstractVector{<:Real}, MR1<:AbstractMatri
     _dcx :: VDC1
     _dsx :: VDC1
     _Afac :: F1
+    _Fsin :: MR3
+    _Fcos :: MR3
 end
 
 function compute_Cmatrix(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, Ψ::F1) where {F1}
@@ -194,8 +197,18 @@ function Shot(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, surfaces::Abst
     sx  = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
     dcx = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
     dsx = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
+
+    Fθ = range(0, twopi, 2M + 5)[1:end-1]
+    Fsin = zeros(L, 2M + 4)
+    Fcos = zeros(L, 2M + 4)
+    for m in 1:(2M + 4)
+        for l in 1:L
+            Fsin[l, m], Fcos[l, m] = sincos(l * Fθ[m])
+        end
+    end
+
     Shot(N, M, ρ, surfaces, C, P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target,
-         R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, cx, sx, dcx, dsx, Afac)
+         R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, cx, sx, dcx, dsx, Afac, Fsin, Fcos)
 end
 
 function Shot(N :: Integer, M :: Integer, MXH_modes::Integer, filename::String; fix_Ip::Bool=false)
@@ -248,22 +261,7 @@ function Shot(shot; P::ProfType=nothing, dP_dψ::ProfType=nothing,
                 P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
-
-# function remap_shot!(shot::Shot, surfaces :: AbstractMatrix{<:Real})
-#     Fi, _, Fo, P = fft_prealloc(shot.M)
-#     return remap_shot!(shot, surfaces, Fi, Fo, P)
-# end
-
-# function remap_shot!(shot::Shot, surfaces :: AbstractMatrix{<:Real}, Fi::AbstractVector{<:Complex}, Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan)
-
-#     compute_Cmatrix!(shot.C, shot.N, shot.M, shot.ρ, shot, shot._Afac, Fi, Fo, P)
-#     #shot.C .= compute_Cmatrix(N, M, ρ, shot)
-#     shot.surfaces .= surfaces
-#     shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe, shot.cfe, shot.sfe = surfaces_FE(ρ, surfaces)
-#     return shot
-# end
-
-function psi_ρθ(shot::Shot, ρ, θ)
+function psi_ρθ(shot::Shot, ρ::Real, θ::Real)
     psi = 0.0
 
     k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
@@ -274,6 +272,21 @@ function psi_ρθ(shot::Shot, ρ, θ)
         @views C = dot(shot.C[2k-1:2k+2, 2m+1], nus)
         @views S = dot(shot.C[2k-1:2k+2, 2m], nus)
         psi += dot((S, C), sincos(m * θ))
+    end
+    return psi
+end
+
+function psi_ρθ(shot::Shot, ρ::Real, Fsin::AbstractVector{<:Real}, Fcos::AbstractVector{<:Real})
+    psi = 0.0
+
+    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
+    nus = (nu_ou, nu_eu, nu_ol, nu_el)
+
+    @views psi += dot(shot.C[2k-1:2k+2, 1], nus)
+    @inbounds for m in 1:shot.M
+        @views C = dot(shot.C[2k-1:2k+2, 2m+1], nus)
+        @views S = dot(shot.C[2k-1:2k+2, 2m], nus)
+        psi += S * Fsin[m] + C * Fcos[m]
     end
     return psi
 end
@@ -426,7 +439,7 @@ function MXHEquilibrium.psi_limits(shot::Shot)
     return ψ₀(shot), 0.0
 end
 
-function dpsi_dρ(shot::Shot, ρ, θ, D_bases = compute_D_bases(shot.ρ, ρ))
+function dpsi_dρ(shot::Shot, ρ::Real, θ::Real, D_bases = compute_D_bases(shot.ρ, ρ))
     dpsi = 0.0
     k = D_bases[1]
     D_nus = D_bases[2:end]
@@ -436,6 +449,20 @@ function dpsi_dρ(shot::Shot, ρ, θ, D_bases = compute_D_bases(shot.ρ, ρ))
         @views C = dot(shot.C[2k-1:2k+2, 2m+1], D_nus)
         @views S = dot(shot.C[2k-1:2k+2, 2m], D_nus)
         dpsi += dot((S, C), sincos(m * θ))
+    end
+    return dpsi
+end
+
+function dpsi_dρ(shot::Shot, ρ::Real, Fsin::AbstractVector{<:Real}, Fcos::AbstractVector{<:Real}, D_bases = compute_D_bases(shot.ρ, ρ))
+    dpsi = 0.0
+    k = D_bases[1]
+    D_nus = D_bases[2:end]
+
+    @views dpsi += dot(shot.C[2k-1:2k+2, 1], D_nus)
+    @inbounds for m in 1:shot.M
+        @views C = dot(shot.C[2k-1:2k+2, 2m+1], D_nus)
+        @views S = dot(shot.C[2k-1:2k+2, 2m], D_nus)
+        dpsi += S * Fsin[m] + C * Fcos[m]
     end
     return dpsi
 end

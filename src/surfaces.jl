@@ -432,5 +432,5 @@ end
 
 function gρρ_gρθ_gθθ(shot::Shot, ρ::Real, θ::Real; tid = Threads.threadid())
     R0x, _, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx = compute_both_MXH(shot, ρ; tid)
-    return MillerExtendedHarmonic.gρρ_gρθ_gθθ(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx)
+    return MillerExtendedHarmonic.gρρ_gρθ_gθθ(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx, shot._Fsin, shot._Fcos)
 end

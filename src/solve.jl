@@ -1,11 +1,13 @@
-function solve(shot::Shot, its::Integer; tol::Real=0.0, relax::Real = 1.0, debug::Bool=false, fit_fallback::Bool=true,
+function solve(shot::Shot, its::Integer; tol::Real=0.0, relax::Real = 1.0,
+               debug::Bool=false, fit_fallback::Bool=true, concentric_first::Bool=true,
                P=nothing, dP_dψ=nothing, F_dF_dψ=nothing, Jt_R=nothing, Jt=nothing,
                Pbnd=shot.Pbnd, Fbnd=shot.Fbnd, Ip_target=shot.Ip_target)
     refill = Shot(shot; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
-    return solve!(refill, its; tol, relax, debug, fit_fallback)
+    return solve!(refill, its; tol, relax, debug, fit_fallback, concentric_first)
 end
 
-function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0, debug::Bool=false, fit_fallback::Bool=true)
+function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0,
+                debug::Bool=false, fit_fallback::Bool=true, concentric_first::Bool=true)
 
     # validate current
     I_c = Ip(refill)
@@ -41,7 +43,7 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0, debu
 
         Raxis, Zaxis, Ψaxis = find_axis(refill)
 
-        if i == 1 && its != 1
+        if concentric_first && i == 1
             debug && println("    Concentric surfaces used for first iteration")
             refill = refit_concentric(refill, Raxis, Zaxis)
         else
@@ -50,12 +52,12 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0, debu
                 refill = refit(refill, Ψaxis, Raxis, Zaxis)
                 warn_concentric = false
             catch err
-                (isa(err, InterruptException) || !fit_fallback) && rethrow(err)
-                warn_concentric = true
-                if debug
-                    println("    Warning: Fit for iteration $i fell back to concentric surfaces due to ", typeof(err))
-                end
-                refill = refit_concentric(refill, Raxis, Zaxis)
+               (isa(err, InterruptException) || !fit_fallback) && rethrow(err)
+               warn_concentric = true
+               if debug
+                   println("    Warning: Fit for iteration $i fell back to concentric surfaces due to ", typeof(err))
+               end
+               refill = refit_concentric(refill, Raxis, Zaxis)
             end
         end
 

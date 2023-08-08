@@ -30,8 +30,6 @@ mutable struct Shot{I1<:Integer, VR1<:AbstractVector{<:Real}, MR1<:AbstractMatri
     _dcx :: VDC1
     _dsx :: VDC1
     _Afac :: F1
-    _Fsin :: MR3
-    _Fcos :: MR3
 end
 
 function compute_Cmatrix(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, Ψ::F1) where {F1}

@@ -115,9 +115,11 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ;
 end
 
 function Shot(N :: Integer, M :: Integer, boundary :: MXH;
+             Raxis::Real = boundary.R0, Zaxis::Real = boundary.Z0,
              P::ProfType=nothing, dP_dψ::ProfType=nothing,
              F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
-             Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing)
+             Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing,
+             approximate_psi::Bool=false)
 
     ρ = range(0, 1, N)
 
@@ -125,7 +127,7 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH;
     surfaces = zeros(5 + 2L, N)
     Stmp = deepcopy(boundary)
     for k in eachindex(ρ)
-        concentric_surface!(Stmp, ρ[k], boundary)
+        concentric_surface!(Stmp, ρ[k], boundary; Raxis, Zaxis)
         @views flat_coeffs!(surfaces[:, k], Stmp)
     end
 
@@ -133,7 +135,19 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH;
 
     C = zeros(2N, 2M+1)
 
-    return Shot(N, M, ρ, surfaces, C, S_FE...; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
+    shot = Shot(N, M, ρ, surfaces, C, S_FE...; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
+
+    if approximate_psi
+        I0 = (Ip_target !== nothing) ? Ip_target : Ip(shot)
+        # something like the flux for uniform current density in elliptical wire
+        a = boundary.R0 * boundary.ϵ
+        ψ0  = 0.5 * μ₀ * boundary.R0 * I0 / sqrt(0.5 * (1.0 + boundary.κ ^ 2))
+        C[2:2:end, 1] .= ψ0 .* ((ρ ./ a) .^ 2 .- 1.0)
+        C[1:2:end, 1] .= 2.0 .* ψ0 .* ρ ./ (a .^ 2)
+        shot = Shot(N, M, ρ, surfaces, C, S_FE...; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
+    end
+
+    return shot
 end
 
 function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ::FE_rep;
@@ -202,6 +216,7 @@ function Shot(N :: Integer, M :: Integer, MXH_modes::Integer, filename::String; 
 
     # profiles
     rho = sqrt.((g.psi .- g.simag) ./ (g.sibry - g.simag))
+    rho[1] = 0.0
     dP_dψ = FE(rho, g.pprime)
     F_dF_dψ = FE(rho, g.ffprim)
 

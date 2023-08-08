@@ -317,7 +317,7 @@ function ψ(shot::Shot, ρ)
     return ψ₀(shot) * (1.0 - psin)
 end
 
-@recipe function plot_shot(shot::Shot, axes::Symbol=:rz; points=101, contours=true)
+@recipe function plot_shot(shot::Shot, axes::Symbol=:rz; points=101, contours=true, surfaces=false)
 
     if axes == :ρθ
         #aspect_ratio --> true
@@ -374,9 +374,19 @@ end
             @series begin
                 seriestype --> :contour
                 colorbar_entry --> false
-                linewidth --> 1
+                linewidth --> 2
                 c --> :white
                 xs, ys, Ψ
+            end
+        end
+        if surfaces
+            for flat in eachcol(shot.surfaces)[2:end]
+                @series begin
+                    seriestype --> :path
+                    c --> :cyan
+                    linewidth --> 1
+                    MXH(flat)
+                end
             end
         end
         @series begin

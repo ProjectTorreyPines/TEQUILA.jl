@@ -30,20 +30,22 @@ mutable struct Shot{I1<:Integer, VR1<:AbstractVector{<:Real}, MR1<:AbstractMatri
     _dcx :: VDC1
     _dsx :: VDC1
     _Afac :: F1
+    _Fsin :: MR3
+    _Fcos :: MR3
 end
 
-function compute_Cmatrix(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, Ψ::Union{Function, Shot})
+function compute_Cmatrix(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, Ψ::F1) where {F1}
     return compute_Cmatrix(N, M, ρ, Ψ, factorize(mass_matrix(N, ρ)))
 end
 
-function compute_Cmatrix(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, Ψ::Union{Function, Shot}, Afac::Factorization)
+function compute_Cmatrix(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, Ψ::F1, Afac::Factorization) where {F1}
     C = zeros(2N, 2M+1)
     Fi, _, Fo, P = fft_prealloc(M)
     return compute_Cmatrix!(C, N, M, ρ, Ψ, Afac, Fi, Fo, P)
 end
 
-function compute_Cmatrix!(C::AbstractMatrix{<:Real}, N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, Ψ_ρθ,
-                          Afac::Factorization, Fi::AbstractVector{<:Complex}, Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan)
+function compute_Cmatrix!(C::AbstractMatrix{<:Real}, N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, Ψ_ρθ::F1,
+                          Afac::Factorization, Fi::AbstractVector{<:Complex}, Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan) where {F1}
     for j in 1:N
         @views θFD_ρIP_f_nu!(C[2j-1, :], Ψ_ρθ, νo, j, ρ, M, Fi, Fo, P)
         @views θFD_ρIP_f_nu!(C[2j  , :], Ψ_ρθ, νe, j, ρ, M, Fi, Fo, P)
@@ -66,20 +68,18 @@ function Shot(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, surfaces
     Shot(N, M, ρ, S, Ψ; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target, zero_boundary)
 end
 
-function Shot(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, surfaces :: AbstractMatrix{<:Real}, Ψ;
+function Ψ_ρθ1(x, t, Ψ, S_FE, zero_boundary)
+    (zero_boundary && (x == 1.0)) && return 0.0
+    return Ψ(R_Z(S_FE..., x, t)...)
+end
+
+function Shot(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, surfaces :: AbstractMatrix{<:Real}, Ψ::F1;
               P::ProfType=nothing, dP_dψ::ProfType=nothing,
               F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
-              Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing, zero_boundary=false)
-
+              Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing, zero_boundary=false) where {F1}
     S_FE = surfaces_FE(ρ, surfaces)
-
-    function Ψ_ρθ(x, t)
-        (zero_boundary && (x == 1.0)) && return 0.0
-        return Ψ(R_Z(S_FE..., x, t)...)
-    end
-
+    Ψ_ρθ = (x, t) -> Ψ_ρθ1(x, t, Ψ, S_FE, zero_boundary)
     C = compute_Cmatrix(N, M, ρ, Ψ_ρθ)
-
     return Shot(N, M, ρ, surfaces, C, S_FE...; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 

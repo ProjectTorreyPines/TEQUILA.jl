@@ -1,4 +1,4 @@
-function trapa(f; min_level=3, max_level=20, tol::Real=eps(typeof(1.0)))
+function trapa(f::F1; min_level=3, max_level=20, tol::Real=eps(typeof(1.0))) where {F1}
     int = twopi * f(0.0)
     for l in 1:max_level
         dx = twopi / 2^l
@@ -13,7 +13,7 @@ function trapa(f; min_level=3, max_level=20, tol::Real=eps(typeof(1.0)))
     return int
 end
 
-function Vprime(shot::Shot, ρ::Real; tid = Threads.threadid())
+function Vprime(shot::F1, ρ::Real; tid = Threads.threadid()) where {F1<:Shot}
     k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
     R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
@@ -28,11 +28,11 @@ function Vprime(shot::Shot, ρ::Real; tid = Threads.threadid())
     dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
 
-    J(θ) = MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx)
+    J = θ -> MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx)
     return twopi * trapa(J)
 end
 
-function FSA(f, shot::Shot, ρ::Real; tid = Threads.threadid())
+function FSA(f::F1, shot::F2, ρ::Real; tid = Threads.threadid()) where {F1, F2<:Shot}
 
     ρ == 0.0 && return f(0.0)
 
@@ -50,12 +50,12 @@ function FSA(f, shot::Shot, ρ::Real; tid = Threads.threadid())
     dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
 
-    J(θ) = MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx)
-    Jf(θ) = f(θ) * J(θ)
+    J  = θ -> MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx)
+    Jf = θ -> f(θ) * J(θ)
     return trapa(Jf) / trapa(J)
 end
 
-function FSA(f, shot::Shot, ρ::Real, Vprime::FE_rep; tid = Threads.threadid())
+function FSA(f::F1, shot::F2, ρ::Real, Vprime::F3; tid = Threads.threadid()) where {F1, F2<:Shot, F3<:FE_rep}
 
     ρ == 0.0 && return f(0.0)
 
@@ -74,12 +74,12 @@ function FSA(f, shot::Shot, ρ::Real, Vprime::FE_rep; tid = Threads.threadid())
     dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
 
     Vp = evaluate_inbounds(Vprime, k, nu_ou, nu_eu, nu_ol, nu_el)
-    Jf(θ) = f(θ) * MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx)
+    Jf = θ -> f(θ) * MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx)
 
     return twopi * trapa(Jf) / Vp
 end
 
-function FSA(f, shot::Shot, ρ::Real, Vprime::Real; tid = Threads.threadid())
+function FSA(f::F1, shot::F2, ρ::Real, Vprime::Real; tid = Threads.threadid()) where {F1, F2<:Shot}
 
     ρ == 0.0 && return f(0.0)
 
@@ -97,11 +97,11 @@ function FSA(f, shot::Shot, ρ::Real, Vprime::Real; tid = Threads.threadid())
     dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
 
-    Jf(θ) = f(θ) * MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx)
+    Jf = θ -> f(θ) * MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx)
     return twopi * trapa(Jf) / Vprime
 end
 
-function fsa_invR2(shot, ρ; tid = Threads.threadid())
+function fsa_invR2(shot::F1, ρ; tid = Threads.threadid()) where {F1<:Shot}
     k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
     R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
@@ -109,12 +109,12 @@ function fsa_invR2(shot, ρ; tid = Threads.threadid())
     cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
     ax = R0x * ϵx
 
-    f(θ) = MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, cx, sx, ax) ^ -2
+    f = θ -> MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, cx, sx, ax) ^ -2
 
     return FSA(f, shot, ρ)
 end
 
-function fsa_invR(shot, ρ; tid = Threads.threadid())
+function fsa_invR(shot::F1, ρ; tid = Threads.threadid()) where {F1<:Shot}
     k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
     R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
@@ -122,19 +122,19 @@ function fsa_invR(shot, ρ; tid = Threads.threadid())
     cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
     ax = R0x * ϵx
 
-    f(θ) = MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, cx, sx, ax) ^ -1
+    f = θ -> MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, cx, sx, ax) ^ -1
 
     return FSA(f, shot, ρ)
 end
 
-function FE_fsa(shot, fsa, coeffs = Vector{typeof(shot.ρ[1])}(undef, 2*length(shot.ρ)); ε = 1e-6)
+function FE_fsa(shot::F1, fsa::F2, coeffs = Vector{typeof(shot.ρ[1])}(undef, 2*length(shot.ρ)); ε = 1e-6) where {F1<:Shot, F2}
     for (i, x) in enumerate(shot.ρ)
         # BCL 4/26/23: I'd like to use ForwardDiff here, but the use of intermediate arrays
         #              in evaluate_csx!() prevents that
         # BCL 6/2/23: Can use ForwardDiff now but it gives slightly different results,
         #             maybe due to issues at boundary? Don't know what is best but
         #             going with ForwardDiff
-        f(x) = fsa(shot, x)
+        f = x ->  fsa(shot, x)
         if x == 0.0
             coeffs[2i-1] = PreallocationTools.ForwardDiff.derivative(f, 1e-12)
         else
@@ -150,7 +150,7 @@ function Ψ(shot)
     return Psi
 end
 
-function Ip(shot; ε = 1e-6)
+function Ip(shot::F1; ε::Real = 1e-6) where {F1<:Shot}
     coeffs = Vector{typeof(shot.ρ[1])}(undef, 2*length(shot.ρ))
     for (i, x) in enumerate(shot.ρ)
         # BCL 4/26/23: I'd like to use ForwardDiff here, but the use of intermediate arrays
@@ -158,7 +158,7 @@ function Ip(shot; ε = 1e-6)
         # BCL 6/2/23: Can use ForwardDiff now but it gives slightly different results,
         #             maybe due to issues at boundary? Don't know what is best but
         #             going with ForwardDiff
-        f(x) = Vprime(shot, x)
+        f = x -> Vprime(shot, x)
         if x == 0.0
             coeffs[2i-1] = PreallocationTools.ForwardDiff.derivative(f, 1e-12)
         else
@@ -168,27 +168,22 @@ function Ip(shot; ε = 1e-6)
     end
     Vp = FE_rep(shot.ρ, coeffs)
     if shot.Jt_R !== nothing
-        f1(x) = Vp(x) * shot.Jt_R(x)
+        f1 = x -> Vp(x) * shot.Jt_R(x)
         return quadgk(f1, 0.0, 1.0)[1] / twopi
     elseif shot.Jt !== nothing
         invR = FE_fsa(shot, fsa_invR)
-        f2(x) = Vp(x) * shot.Jt(x) * invR(x)
+        f2 = x -> Vp(x) * shot.Jt(x) * invR(x)
         return quadgk(f2, 0.0, 1.0)[1] / twopi
     else
         invR2 = FE_fsa(shot, fsa_invR2)
-        if shot.dP_dψ !== nothing
-            f3(x) = - Vp(x) * (shot.dP_dψ(x) + invR2(x) * shot.F_dF_dψ(x) / μ₀)
-            return quadgk(f3, 0.0, 1.0)[1]
-        else
-            Pp(x) = D(shot.P, x) / dψ_dρ(shot, x)
-            f4(x) = - Vp(x) * (Pp(x) + invR2(x) * shot.F_dF_dψ(x) / μ₀)
-            return quadgk(f4, 0.0, 1.0)[1]
-        end
+        Pp = Pprime(shot, shot.P, shot.dP_dψ)
+        f3 = x ->  - Vp(x) * (Pp(x) + invR2(x) * shot.F_dF_dψ(x) / μ₀)
+        return quadgk(f3, 0.0, 1.0)[1]
     end
     return 0.0
 end
 
-function Ip_ffp(shot; ε = 1e-6)
+function Ip_ffp(shot::F1; ε::Real = 1e-6) where {F1<:Shot}
     (shot.F_dF_dψ === nothing) && return 0.0
 
     coeffs = Vector{typeof(shot.ρ[1])}(undef, 2*length(shot.ρ))
@@ -203,6 +198,6 @@ function Ip_ffp(shot; ε = 1e-6)
     Vp = FE_rep(shot.ρ, coeffs)
 
     invR2 = FE_fsa(shot, fsa_invR2)
-    f(x) = - Vp(x) * invR2(x) * shot.F_dF_dψ(x) / μ₀
+    f = x -> - Vp(x) * invR2(x) * shot.F_dF_dψ(x) / μ₀
     return quadgk(f, 0.0, 1.0)[1]
 end

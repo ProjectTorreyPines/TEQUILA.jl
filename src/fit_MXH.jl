@@ -387,3 +387,142 @@ function refit_concentric(shot::Shot, Raxis::Real, Zaxis::Real)
     return shot_refit
 
 end
+
+function refit_concentric(shot::Shot)
+
+    surfaces = deepcopy(shot.surfaces)
+    @views boundary = shot.surfaces[:,end]
+    for k in eachindex(shot.ρ)
+        @views concentric_surface!(surfaces[:, k], shot.ρ[k], boundary)
+    end
+
+    shot_refit = Shot(shot.N, shot.M, shot.ρ, surfaces, shot;
+                      P = shot.P, dP_dψ = shot.dP_dψ,
+                      F_dF_dψ = shot.F_dF_dψ, Jt_R = shot.Jt_R, Jt = shot.Jt,
+                      Pbnd = shot.Pbnd, Fbnd = shot.Fbnd, Ip_target = shot.Ip_target)
+
+    return shot_refit
+
+end
+
+function refit_shifted(shot::Shot, Raxis::Real, Zaxis::Real)
+    surfaces = deepcopy(shot.surfaces)
+    @views boundary = shot.surfaces[:,end]
+    Rcntr = surfaces[1, 1]
+    Zcntr = surfaces[2, 1]
+    Rint, Zint = TEQUILA.boundary_intersection(boundary, Rcntr, Zcntr, Raxis, Zaxis)
+    fac = sqrt(((Raxis - Rint) ^ 2 + (Zaxis - Zint) ^ 2)/((Rcntr - Rint) ^ 2 + (Zcntr - Zint) ^ 2))
+    for k in eachindex(shot.ρ)
+        (k == 1 || k == shot.N) && continue
+        @views TEQUILA.shift_surface!(surfaces[:, k], fac, Rcntr, Zcntr, Raxis, Zaxis, Rint, Zint)
+    end
+    surfaces[1, 1] = Raxis
+    surfaces[2, 1] = Zaxis
+
+    shot_refit = Shot(shot.N, shot.M, shot.ρ, surfaces, shot;
+                      P = shot.P, dP_dψ = shot.dP_dψ,
+                      F_dF_dψ = shot.F_dF_dψ, Jt_R = shot.Jt_R, Jt = shot.Jt,
+                      Pbnd = shot.Pbnd, Fbnd = shot.Fbnd, Ip_target = shot.Ip_target)
+
+    return shot_refit
+
+end
+
+function find_ρ_lvls(θ, shot, lvls; pad=0)
+    ρ_lvls = similar(lvls)
+    Nx = shot.N + pad
+    x=zeros(Nx)
+    coeffs=zeros(2Nx)
+    return find_ρ_lvls!(ρ_lvls, θ, shot, lvls; pad, x, coeffs)
+end
+
+function find_ρ_lvls!(ρ_lvls, θ, shot, lvls; pad=0, x=zeros(shot.N+pad), coeffs=zeros(2*(shot.N+pad)))
+
+    # first x is the ρ coordinate
+    # pad near x=0 to better resolve steep gradient
+    @views x[(2+pad):end] .= shot.ρ[2:end]
+    for j in 1:pad
+        k = 2 + pad - j
+        x[k] = x[k+1] / 2
+    end
+    x[1] = 0.0
+
+    coeffs[1:2:end] .= 1.0 ./ TEQUILA.dpsi_dρ.(Ref(shot), x, θ)
+    coeffs[2:2:end] .= x
+
+    x2 = x[2]
+
+    # reuse x for psi to avoid allocation
+    x .= psi_ρθ.(Ref(shot), x, θ)
+
+    coeffs[1] = (2 * x2 / (x[2] - x[1])) - coeffs[3] # quadratic through first grid cell to avoid infinite gradient
+    f = FE_rep(x, coeffs)
+    ρ_lvls .= f.(lvls)
+    ρ_lvls[1] = 0.0
+    return ρ_lvls
+end
+
+function ρθ_contours(shot, lvls; pad=4)
+    Nlvls = length(lvls)
+    L, _ = size(shot.surfaces)
+    L = (L - 5) ÷ 2
+    M = 4 * (shot.M + L)
+    Rs = zeros(M, Nlvls)
+    Zs = zeros(M, Nlvls)
+    ρ_lvls = similar(lvls)
+    return ρθ_contours!(Rs, Zs, shot, lvls; pad, ρ_lvls)
+end
+
+function ρθ_contours!(Rs, Zs, shot, lvls; pad=4, ρ_lvls = similar(lvls))
+    M, _ = size(Rs)
+    θs = range(0, 2π, M+1)[1:end-1]
+    Nx = shot.N + pad
+    x = zeros(Nx)
+    coeffs = zeros(2Nx)
+    for (k, θ) in enumerate(θs)
+        find_ρ_lvls!(ρ_lvls, θ, shot, lvls; pad, x, coeffs)
+        for (j, ρ) in enumerate(ρ_lvls)
+            Rs[k, j], Zs[k, j] = R_Z(shot, ρ, θ)
+        end
+    end
+    return Rs, Zs
+end
+
+function refit2(shot::Shot)
+    Raxis, Zaxis, Ψaxis = find_axis(refill)
+    return refit2(shot, Ψaxis, Raxis, Zaxis)
+end
+
+function refit2(shot::Shot, Ψaxis::Real, Raxis::Real, Zaxis::Real)
+
+    mid = refit_shifted(shot, Raxis, Zaxis)
+    lvls = Ψaxis .* (1.0 .- mid.ρ.^2)
+    Rs, Zs = ρθ_contours(mid, lvls)
+
+    surfaces = deepcopy(mid.surfaces)
+    L, N = size(mid.surfaces)
+    L = (L - 5) ÷ 2
+    Stmp = MXH(Raxis, L)
+
+    M, _ = size(Rs)
+    θ   = zeros(M)
+    Δθᵣ = zeros(M)
+    dθ  = zeros(M)
+    Fm  = zeros(M)
+
+    for j in eachindex(mid.ρ)
+        (j == 1 || j == N) && continue
+        @views pr = Rs[:, j]
+        @views pz = Zs[:, j]
+        MXH!(Stmp, pr, pz; θ, Δθᵣ, dθ, Fm, spline=true)
+        @views flat_coeffs!(surfaces[:, j], Stmp)
+    end
+    surfaces[1, 1] = Raxis
+    surfaces[2, 1] = Zaxis
+
+    shot_refit = Shot(mid.N, mid.M, mid.ρ, surfaces, mid;
+                      P = mid.P, dP_dψ = mid.dP_dψ,
+                      F_dF_dψ = mid.F_dF_dψ, Jt_R = mid.Jt_R, Jt = mid.Jt,
+                      Pbnd = mid.Pbnd, Fbnd = mid.Fbnd, Ip_target = mid.Ip_target)
+
+end

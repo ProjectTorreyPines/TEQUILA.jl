@@ -38,6 +38,67 @@ function scale_surface!(surface::AbstractVector{<:Real}, x::Real; Raxis::Real = 
     return surface
 end
 
+# Find the point on the MXH curve bnd that intersects the line joining (R1, Z1) and (R2, Z2),
+# closest to (R2, Z2)
+function boundary_intersection(bnd::AbstractVector{<:Real}, R1, Z1, R2, Z2; max_pts=2)
+
+    ΔR = R2 - R1
+    ΔZ = Z2 - Z1
+    a = bnd[1] * bnd[3]
+
+    # if points 1 & 2 are the same, just give the outboard midplane
+    (ΔR == 0.0 && ΔZ == 0.0) && return R_MXH(0.0, bnd, a), Z_MXH(0.0, bnd, a)
+
+    # find all intersecting points
+    # for most cases of interest, there will be only two
+    # if the boundary has lots of wiggles, then you might need to increase max_pts
+    if ΔR == 0.0
+        f = θ -> R_MXH(θ, bnd, a) - R1
+    elseif ΔZ == 0.0
+        f = θ -> Z1 - Z_MXH(θ, bnd, a)
+    else
+        m = ΔZ / ΔR
+        f = θ -> m * (R_MXH(θ, bnd, a) - R1) + Z1 - Z_MXH(θ, bnd, a)
+    end
+    θs = Roots.find_zeros(f, -π, π; no_pts=max_pts)
+
+    # closest intersecting point that is along vector from point 1 to point 2
+    g = θ -> begin
+        if ΔZ != 0.0
+            Zi = Z_MXH(θ, bnd, a)
+            t = (Zi - Z1) / ΔZ
+        elseif ΔR != 0.0
+            Ri = R_MXH(θ, bnd, a)
+            t = (Ri - R1) / ΔR
+        end
+        return (t > 0) ? t : Inf
+    end
+    t = minimum(g(θ) for θ in θs)
+    Ri = R1 + ΔR * t
+    Zi = Z1 + ΔZ * t
+
+    return Ri, Zi
+end
+
+
+function shift_surface!(surface::AbstractVector{<:Real}, fac, Rc, Zc, Ra, Za, Ri, Zi)
+    Rs, Zs = TEQUILA.boundary_intersection(surface, Rc, Zc, Ra, Za)
+    R0 = surface[1]
+    Z0 = surface[2]
+    a = R0 * surface[3]
+    dR = Rs - R0
+    dZ = Zs - Z0
+
+    Rs = (Rs - Ri) * fac + Ri
+    Zs = (Zs - Zi) * fac + Zi
+
+    surface[1] = Rs - dR
+    surface[2] = Zs - dZ
+    surface[3] = a / surface[1]
+
+    return surface
+end
+
 function surfaces_FE(shot::Shot)
     surfaces_FE(shot.ρ, shot.surfaces)
 end

@@ -30,16 +30,26 @@ function fourier_decompose(f, M::Integer; fft_op::Union{Nothing, Symbol}=nothing
     return fourier_decompose!(CS, f, M, Fi, Fo, P; fft_op)
 end
 
-function fourier_decompose!(CS::AbstractVector{<:Real}, f::F1, M::Integer,
-                            Fi::AbstractVector{<:Complex}, Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan;
+function fourier_decompose!(CS::AbstractVector{<:Real}, f::F1, M::Integer, Fi::AbstractVector{<:Complex},
+                            Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan, Q::Nothing=nothing;
+                            reset_CS = false, fft_op::Union{Nothing, Symbol}=nothing) where {F1<:Function}
+    θs = range(0,twopi, 2M+5)[1:end-1]
+    return fourier_decompose!(CS, f, M, Fi, Fo, P, θs; reset_CS, fft_op)
+end
+
+function fourier_decompose!(CS::AbstractVector{<:Real}, f::F1, M::Integer, Fi::AbstractVector{<:Complex},
+                            Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan, Q::QuadInfo;
+                            reset_CS = false, fft_op::Union{Nothing, Symbol}=nothing) where {F1<:Function}
+    return fourier_decompose!(CS, f, M, Fi, Fo, P, Q.θ; reset_CS, fft_op)
+end
+
+function fourier_decompose!(CS::AbstractVector{<:Real}, f::F1, M::Integer, Fi::AbstractVector{<:Complex},
+                            Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan, θs::AbstractVector{<:Real};
                             reset_CS = false, fft_op::Union{Nothing, Symbol}=nothing) where {F1<:Function}
     invM2 = 1.0 / (M + 2)
-    x = range(0,twopi, 2M+5)[1:end-1]
-    @. Fi = f(x)
+    @. Fi = f(θs)
     mul!(Fo, P, Fi)
-
     reset_CS && (CS .= 0.0)
-
     if fft_op === :derivative
         m_M2 = range(0, M * invM2, M+1)
         @views CS[1:2:end] .+= m_M2 .* imag.(Fo[1:(M+1)])
@@ -49,20 +59,32 @@ function fourier_decompose!(CS::AbstractVector{<:Real}, f::F1, M::Integer,
         @views CS[1:2:end] .+=  real.(Fo[1:(M+1)]) .* invM2
         @views CS[2:2:end] .+= .-imag.(Fo[2:(M+1)]) .* invM2 # fft sign convention
     end
-    #@assert !any(isnan.(CS))
     return CS
 end
 
 function dual_fourier_decompose!(CS::AbstractVector{<:Real}, f, M::Integer,
-                            Fi::AbstractVector{<:Complex}, dFi::AbstractVector{<:Complex}, Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan;
-                            reset_CS = false)
+                                 Fi::AbstractVector{<:Complex}, dFi::AbstractVector{<:Complex},
+                                 Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan, Q::Nothing=nothing;
+                                 reset_CS = false)
+    θs = range(0, twopi, 2M+5)[1:end-1]
+    return dual_fourier_decompose!(CS, f, M, Fi, dFi, Fo, P, θs; reset_CS)
+end
 
+function dual_fourier_decompose!(CS::AbstractVector{<:Real}, f, M::Integer,
+                                 Fi::AbstractVector{<:Complex}, dFi::AbstractVector{<:Complex},
+                                 Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan, Q::QuadInfo;
+                                 reset_CS = false)
+    return dual_fourier_decompose!(CS, f, M, Fi, dFi, Fo, P, Q.θ; reset_CS)
+end
+
+function dual_fourier_decompose!(CS::AbstractVector{<:Real}, f, M::Integer,
+                                 Fi::AbstractVector{<:Complex}, dFi::AbstractVector{<:Complex},
+                                 Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan, θs::AbstractVector{<:Real};
+                                 reset_CS = false)
     reset_CS && (CS .= 0.0)
-
     invM2 = 1.0 / (M + 2)
-    x = range(0, twopi, 2M+5)[1:end-1]
 
-    for (k, θ) in enumerate(x)
+    for (k, θ) in enumerate(θs)
         Fi[k], dFi[k] = f(θ)
     end
 
@@ -85,13 +107,40 @@ end
     return inner_product(x -> f(x, θ), nu, k, ρ, int_order)
 end
 
+function ρIP(θ, f, nu::Symbol, k, ρ, Q::QuadInfo)
+    ν = get_nu(Q, nu, k)
+    return sum(Q.w[j] * f(Q.x[j], θ) * ν[j] for j in rowvals(ν))
+end
+
 @inline ρIP(θ, f, nu1, k1, nu2, k2, ρ) = inner_product(x -> f(x, θ), nu1, k1, nu2, k2, ρ, int_order)
+
+function ρIP(θ, f, nu1::Symbol, k1, nu2::Symbol, k2, ρ, Q::QuadInfo)
+    abs(k1 - k2) > 1 && return 0.0
+    ν1 = get_nu(Q, nu1, k1)
+    ν2 = get_nu(Q, nu2, k2)
+    jmin = max(minimum(rowvals(ν1)), minimum(rowvals(ν2)))
+    jmax = min(maximum(rowvals(ν1)), maximum(rowvals(ν2)))
+    return sum(Q.w[j] * f(Q.x[j], θ) * ν1[j] * ν2[j] for j in jmin:jmax)
+end
 
 function ρIP(θ, nu1, k1, f, fnu2, g, gnu2, k2, ρ)
     return inner_product(nu1, k1, x -> f(x, θ), fnu2, x -> g(x, θ), gnu2, k2, ρ, int_order)
 end
 
-function ρIP(θ, shot, sym, nu1, k1, fnu2, gnu2, k2, ρ, m)
+function ρIP(θ, nu1::Symbol, k1, f, fnu2::Symbol, g, gnu2::Symbol, k2, ρ, Q::QuadInfo)
+    abs(k1 - k2) > 1 && return 0.0
+    ν1 = get_nu(Q, nu1, k1)
+    fν2 = get_nu(Q, fnu2, k2)
+    gν2 = get_nu(Q, gnu2, k2)
+    # fν2 and gν2 have the same nonzero values
+    jmin = max(minimum(rowvals(ν1)), minimum(rowvals(fν2)))
+    jmax = min(maximum(rowvals(ν1)), maximum(rowvals(fν2)))
+    x = Q.x
+    w = Q.w
+    return sum(w[j] * ν1[j] * (f(x[j], θ) * fν2[j] + g(x[j], θ) * gν2[j]) for j in jmin:jmax)
+end
+
+function ρIP(θ, shot, sym, nu1, k1, fnu2, gnu2, k2, ρ, m, Q::Nothing)
 
     smt, cmt = sincos(m * θ)
 
@@ -134,6 +183,63 @@ function ρIP(θ, shot, sym, nu1, k1, fnu2, gnu2, k2, ρ, m)
     return I
 end
 
+function int_cs_ρρ_ρθ(j, l, m, ν1, fν2, gν2, Q)
+    grr = Q.gρρ[j, l]
+    grt = Q.gρθ[j, l]
+    f = -Fcos[m, l] * grr
+    g = m * Fsin[m, l] * grt
+    return ν1[j] * (f * fν2[j] + g * gν2[j])
+end
+
+function int_cs_ρθ_θθ(j, l, m, ν1, fν2, gν2, Q)
+    grt = Q.gρθ[j, l]
+    gtt = Q.gθθ[j, l]
+    f = -Fcos[m, l] * grt
+    g = m * Fsin[m, l] * gtt
+    return ν1[j] * (f * fν2[j] + g * gν2[j])
+end
+
+function int_sc_ρρ_ρθ(j, l, m, ν1, fν2, gν2, Q)
+    grr = Q.gρρ[j, l]
+    grt = Q.gρθ[j, l]
+    f = -Fsin[m, l] * grr
+    g = -m * Fcos[m, l] * grt
+    return ν1[j] * (f * fν2[j] + g * gν2[j])
+end
+
+function int_sc_ρθ_θθ(j, l, m, ν1, fν2, gν2, Q)
+    grt = Q.gρθ[j, l]
+    gtt = Q.gθθ[j, l]
+    f = -Fsin[m, l] * grt
+    g = -m * Fcos[m, l] * gtt
+    return ν1[j] * (f * fν2[j] + g * gν2[j])
+end
+
+function ρIP(θ, shot, sym, nu1::Symbol, k1, fnu2::Symbol, gnu2::Symbol, k2, ρ, m, Q::QuadInfo)
+
+    abs(k1 - k2) > 1 && return 0.0
+    ν1 = get_nu(Q, nu1, k1)
+    fν2 = get_nu(Q, fnu2, k2)
+    gν2 = get_nu(Q, gnu2, k2)
+
+    l = MillerExtendedHarmonic.θindex(θ, Q.Fsin)
+
+    jmin = max(minimum(rowvals(ν1)), minimum(rowvals(fν2)))
+    jmax = min(maximum(rowvals(ν1)), maximum(rowvals(fν2)))
+
+    I = 0.0
+    if sym === :cs_ρρ_ρθ
+        I = sum(int_cs_ρρ_ρθ(j, l, m, ν1, fν2, gν2, Q) for j in jmin:jmax)
+    elseif sym === :cs_ρθ_θθ
+        I = sum(int_cs_ρθ_θθ(j, l, m, ν1, fν2, gν2, Q) for j in jmin:jmax)
+    elseif sym === :sc_ρρ_ρθ
+        I = sum(int_sc_ρρ_ρθ(j, l, m, ν1, fν2, gν2, Q) for j in jmin:jmax)
+    elseif sym === :sc_ρθ_θθ
+        I = sum(int_sc_ρθ_θθ(j, l, m, ν1, fν2, gν2, Q) for j in jmin:jmax)
+    end
+    return I
+end
+
 # Fourier decomposition (all m values) of ρIP_f_nu
 # Doing this for all k and nu will give 2D decomposition of f in to FEs for ρ and Fourier for θ
 function θFD_ρIP_f_nu(f, nu, k, ρ, M; fft_op::Union{Nothing, Symbol}=nothing)
@@ -141,31 +247,24 @@ function θFD_ρIP_f_nu(f, nu, k, ρ, M; fft_op::Union{Nothing, Symbol}=nothing)
     return fourier_decompose(g, M; fft_op)
 end
 
-function θFD_ρIP_f_nu!(CS, f::F1, nu::F2, k, ρ, M, Fi, Fo, P; reset_CS = false, fft_op::Union{Nothing, Symbol}=nothing)  where {F1, F2}
-    return fourier_decompose!(CS, θ -> ρIP(θ, f, nu, k, ρ), M, Fi, Fo, P; reset_CS, fft_op)
+function θFD_ρIP_f_nu!(CS, f::F1, nu::F2, k, ρ, M, Fi, Fo, P, Q=nothing; reset_CS = false, fft_op::Union{Nothing, Symbol}=nothing)  where {F1, F2}
+    return fourier_decompose!(CS, θ -> ρIP(θ, f, nu, k, ρ, Q), M, Fi, Fo, P, Q; reset_CS, fft_op)
 end
 
-function θFD_ρIP_f_nu_nu!(CS, f, nu1, k1, nu2, k2, ρ, M, Fi, Fo, P; reset_CS = false, fft_op::Union{Nothing, Symbol}=nothing)
-    return fourier_decompose!(CS, θ -> ρIP(θ, f, nu1, k1, nu2, k2, ρ), M, Fi, Fo, P; reset_CS, fft_op)
+function θFD_ρIP_f_nu_nu!(CS, f, nu1, k1, nu2, k2, ρ, M, Fi, Fo, P, Q=nothing; reset_CS = false, fft_op::Union{Nothing, Symbol}=nothing)
+    return fourier_decompose!(CS, θ -> ρIP(θ, f, nu1, k1, nu2, k2, ρ, Q), M, Fi, Fo, P, Q; reset_CS, fft_op)
 end
 
-function θFD_ρIP!(CS, nu1, k1, f, fnu2, g, gnu2, k2, ρ, M, Fi, Fo, P; reset_CS = false, fft_op::Union{Nothing, Symbol}=nothing)
-    return fourier_decompose!(CS, θ -> ρIP(θ, nu1, k1, f, fnu2, g, gnu2, k2, ρ), M, Fi, Fo, P; reset_CS, fft_op)
+function θFD_ρIP!(CS, nu1, k1, f, fnu2, g, gnu2, k2, ρ, M, Fi, Fo, P, Q=nothing; reset_CS = false, fft_op::Union{Nothing, Symbol}=nothing)
+    return fourier_decompose!(CS, θ -> ρIP(θ, nu1, k1, f, fnu2, g, gnu2, k2, ρ, Q), M, Fi, Fo, P, Q; reset_CS, fft_op)
 end
 
-function θFD_ρIP!(CS, shot::Shot, sym::Symbol, nu1, k1, fnu2, gnu2, k2, ρ, m, M, Fi, Fo, P; reset_CS = false, fft_op::Union{Nothing, Symbol}=nothing)
-    return fourier_decompose!(CS, θ -> ρIP(θ, shot, sym, nu1, k1, fnu2, gnu2, k2, ρ, m), M, Fi, Fo, P; reset_CS, fft_op)
+function θFD_ρIP!(CS, shot::Shot, sym::Symbol, nu1, k1, fnu2, gnu2, k2, ρ, m, M, Fi, Fo, P, Q=nothing; reset_CS = false, fft_op::Union{Nothing, Symbol}=nothing)
+    return fourier_decompose!(CS, θ -> ρIP(θ, shot, sym, nu1, k1, fnu2, gnu2, k2, ρ, m, Q), M, Fi, Fo, P, Q; reset_CS, fft_op)
 end
 
-function θFD_ρIP_2!(CS, shot::Shot, sym::Symbol, dsym::Symbol, nu1, k1, fnu2, gnu2, dfnu2, dgnu2, k2, ρ, m, M, Fi, Fo, P; reset_CS = false)
-    return fourier_decompose!(CS, dCS, θ -> ρIP(θ, shot, sym, nu1, k1, fnu2, gnu2, k2, ρ, m), M, Fi, Fo, P; reset_CS, fft_op)
-end
-
-#@views θFD_ρIP!(Astar[Jes, Ie + Mc], shot, :cs_ρρ_ρθ, D_νe, j, D_νo, νo, j-1, ρ, m, M, Fi, Fo, P)
-#@views θFD_ρIP!(Astar[Jes, Ie + Mc], shot, :cs_ρθ_θθ, νe, j, D_νo, νo, j-1, ρ, m, M, Fi, Fo, P, fft_op=:derivative)
-
-function compute_element(CS::AbstractVector{<:Real}, shot::Shot, Ftype::Symbol, m, nu1_type, k1, nu2_type, k2, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
-    return dual_fourier_decompose!(CS, θ -> dual_ρIP(θ, shot, Ftype, m, nu1_type, k1, nu2_type, k2, ρ), M, Fi, dFi, Fo, P; reset_CS)
+function compute_element(CS::AbstractVector{<:Real}, shot::Shot, Ftype::Symbol, m, nu1_type, k1, nu2_type, k2, ρ,  M, Fi, dFi, Fo, P, Q=nothing; reset_CS = false)
+    return dual_fourier_decompose!(CS, θ -> dual_ρIP(θ, shot, Ftype, m, nu1_type, k1, nu2_type, k2, ρ, Q), M, Fi, dFi, Fo, P, Q; reset_CS)
 end
 
 function int_ab(x, fa, ga, fb, gb, nu1, D_nu1, nu2, D_nu2)

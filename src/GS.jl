@@ -160,37 +160,37 @@ function define_Acol!(Astar, m, shot, Fi, dFi, Fo, P)
 
             # [je, je-3]
             Ie = b2e(shot, je-3)
-            @views compute_element(Astar[Jes, Ie + Mc], shot, :cos, m, :even, j, :odd, j-1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+            @views compute_element(Astar[Jes, Ie + Mc], shot, :cos, m, :even, j, :odd, j-1, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
             if m != 0
-                @views compute_element(Astar[Jes, Ie + Ms], shot, :sin, m, :even, j, :odd, j-1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+                @views compute_element(Astar[Jes, Ie + Ms], shot, :sin, m, :even, j, :odd, j-1, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
             end
 
             # T[jo, jo-2]
             Io = b2e(shot, jo-2)
-            @views compute_element(Astar[Jos, Io + Mc], shot, :cos, m, :odd, j, :odd, j-1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+            @views compute_element(Astar[Jos, Io + Mc], shot, :cos, m, :odd, j, :odd, j-1, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
             if m != 0
-                @views compute_element(Astar[Jos, Io + Ms], shot, :sin, m, :odd, j, :odd, j-1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+                @views compute_element(Astar[Jos, Io + Ms], shot, :sin, m, :odd, j, :odd, j-1, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
             end
 
             # T[je, je-2]
             Ie = b2e(shot, je-2)
-            @views compute_element(Astar[Jes, Ie + Mc], shot, :cos, m, :even, j, :even, j-1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+            @views compute_element(Astar[Jes, Ie + Mc], shot, :cos, m, :even, j, :even, j-1, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
             if m != 0
-                @views compute_element(Astar[Jes, Ie + Ms], shot, :sin, m, :even, j, :even, j-1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+                @views compute_element(Astar[Jes, Ie + Ms], shot, :sin, m, :even, j, :even, j-1, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
             end
 
             # T[jo, jo-1]
             Io = b2e(shot, jo-1)
-            @views compute_element(Astar[Jos, Io + Mc], shot, :cos, m, :odd, j, :even, j-1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+            @views compute_element(Astar[Jos, Io + Mc], shot, :cos, m, :odd, j, :even, j-1, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
             if m != 0
-                @views compute_element(Astar[Jos, Io + Ms], shot, :sin, m, :odd, j, :even, j-1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+                @views compute_element(Astar[Jos, Io + Ms], shot, :sin, m, :odd, j, :even, j-1, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
             end
         end
         # T[je, je-1]
         Ie = b2e(shot, je-1)
-        @views compute_element(Astar[Jes, Ie + Mc], shot, :cos, m, :even, j, :odd, j, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+        @views compute_element(Astar[Jes, Ie + Mc], shot, :cos, m, :even, j, :odd, j, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
         if m != 0
-            @views compute_element(Astar[Jes, Ie + Ms], shot, :sin, m, :even, j, :odd, j, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+            @views compute_element(Astar[Jes, Ie + Ms], shot, :sin, m, :even, j, :odd, j, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
         end
 
         # Boundary term [νj gρρ D_νi]_0^1, non-zero for νj even and νi odd
@@ -212,16 +212,16 @@ function define_Acol!(Astar, m, shot, Fi, dFi, Fo, P)
 
         # T[jo, jo]
         Io = Jo
-        @views compute_element(Astar[Jos, Io + Mc], shot, :cos, m, :odd, j, :odd, j, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+        @views compute_element(Astar[Jos, Io + Mc], shot, :cos, m, :odd, j, :odd, j, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
         if m != 0
-            @views compute_element(Astar[Jos, Io + Ms], shot, :sin, m, :odd, j, :odd, j, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+            @views compute_element(Astar[Jos, Io + Ms], shot, :sin, m, :odd, j, :odd, j, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
         end
 
         # T[je, je]
         Ie = Je
-        @views compute_element(Astar[Jes, Ie + Mc], shot, :cos, m, :even, j, :even, j, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+        @views compute_element(Astar[Jes, Ie + Mc], shot, :cos, m, :even, j, :even, j, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
         if m != 0
-            @views compute_element(Astar[Jes, Ie + Ms], shot, :sin, m, :even, j, :even, j, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+            @views compute_element(Astar[Jes, Ie + Ms], shot, :sin, m, :even, j, :even, j, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
         end
 
         # Boundary term [νj gρt νi]_0^1, non-zero for νj even and νi even
@@ -242,38 +242,38 @@ function define_Acol!(Astar, m, shot, Fi, dFi, Fo, P)
 
         # T[jo, jo+1]
         Io = b2e(shot, jo+1)
-        @views compute_element(Astar[Jos, Io + Mc], shot, :cos, m, :odd, j, :even, j, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+        @views compute_element(Astar[Jos, Io + Mc], shot, :cos, m, :odd, j, :even, j, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
         if m != 0
-            @views compute_element(Astar[Jos, Io + Ms], shot, :sin, m, :odd, j, :even, j, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+            @views compute_element(Astar[Jos, Io + Ms], shot, :sin, m, :odd, j, :even, j, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
         end
 
         if j < length(ρ)
             # T[je, je+1]
             Ie = b2e(shot, je+1)
-            @views compute_element(Astar[Jes, Ie + Mc], shot, :cos, m, :even, j, :odd, j+1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+            @views compute_element(Astar[Jes, Ie + Mc], shot, :cos, m, :even, j, :odd, j+1, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
             if m != 0
-                @views compute_element(Astar[Jes, Ie + Ms], shot, :sin, m, :even, j, :odd, j+1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+                @views compute_element(Astar[Jes, Ie + Ms], shot, :sin, m, :even, j, :odd, j+1, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
             end
 
             # T[jo, jo+2]
             Io = b2e(shot, jo+2)
-            @views compute_element(Astar[Jos, Io + Mc], shot, :cos, m, :odd, j, :odd, j+1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+            @views compute_element(Astar[Jos, Io + Mc], shot, :cos, m, :odd, j, :odd, j+1, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
             if m != 0
-                @views compute_element(Astar[Jos, Io + Ms], shot, :sin, m, :odd, j, :odd, j+1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+                @views compute_element(Astar[Jos, Io + Ms], shot, :sin, m, :odd, j, :odd, j+1, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
             end
 
             # T[je, je+2]
             Ie = b2e(shot, je+2)
-            @views compute_element(Astar[Jes, Ie + Mc], shot, :cos, m, :even, j, :even, j+1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+            @views compute_element(Astar[Jes, Ie + Mc], shot, :cos, m, :even, j, :even, j+1, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
             if m != 0
-                @views compute_element(Astar[Jes, Ie + Ms], shot, :sin, m, :even, j, :even, j+1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+                @views compute_element(Astar[Jes, Ie + Ms], shot, :sin, m, :even, j, :even, j+1, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
             end
 
             # T[jo, jo+3]
             Io = b2e(shot, jo+3)
-            @views compute_element(Astar[Jos, Io + Mc], shot, :cos, m, :odd, j, :even, j+1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+            @views compute_element(Astar[Jos, Io + Mc], shot, :cos, m, :odd, j, :even, j+1, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
             if m != 0
-                @views compute_element(Astar[Jos, Io + Ms], shot, :sin, m, :odd, j, :even, j+1, ρ,  M, Fi, dFi, Fo, P; reset_CS = false)
+                @views compute_element(Astar[Jos, Io + Ms], shot, :sin, m, :odd, j, :even, j+1, ρ,  M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
             end
 
             # T[je, je+3] does not exist

@@ -36,10 +36,11 @@ function QuadInfo(ρ::AbstractVector, M::Int, MXH_modes::Int; order::Int=int_ord
     # θ only
     θ = range(0, twopi, 2M + 5)[1:end-1]
     Mθ = 2M + 4
-    Fsin = zeros(MXH_modes, Mθ)
-    Fcos = zeros(MXH_modes, Mθ)
+    Mrows = max(Mθ, MXH_modes)
+    Fsin = zeros(Mrows, Mθ)
+    Fcos = zero(Fsin)
     for l in eachindex(θ)
-        for m in 1:MXH_modes
+        for m in 1:Mrows
             Fsin[m, l], Fcos[m, l] = sincos(m * θ[l])
         end
     end

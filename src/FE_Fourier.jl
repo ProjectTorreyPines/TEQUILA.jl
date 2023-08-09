@@ -103,16 +103,16 @@ end
 
 
 # At fixed θ, give inner product of f(x,θ) and the basis nu(x,k,ρ)
-@inline function ρIP(θ, f::F1, nu::F2, k, ρ) where {F1<:Union{Function, Shot}, F2<:Function}
+@inline function ρIP(θ, f::F1, nu::F2, k, ρ, Q::Nothing=nothing) where {F1<:Union{Function, Shot}, F2<:Function}
     return inner_product(x -> f(x, θ), nu, k, ρ, int_order)
 end
 
 function ρIP(θ, f, nu::Symbol, k, ρ, Q::QuadInfo)
     ν = get_nu(Q, nu, k)
-    return sum(Q.w[j] * f(Q.x[j], θ) * ν[j] for j in rowvals(ν))
+    return sum(j -> Q.w[j] * f(Q.x[j], θ) * ν[j], rowvals(ν))
 end
 
-@inline ρIP(θ, f, nu1, k1, nu2, k2, ρ) = inner_product(x -> f(x, θ), nu1, k1, nu2, k2, ρ, int_order)
+@inline ρIP(θ, f, nu1, k1, nu2, k2, ρ, Q::Nothing=nothing) = inner_product(x -> f(x, θ), nu1, k1, nu2, k2, ρ, int_order)
 
 function ρIP(θ, f, nu1::Symbol, k1, nu2::Symbol, k2, ρ, Q::QuadInfo)
     abs(k1 - k2) > 1 && return 0.0
@@ -120,10 +120,10 @@ function ρIP(θ, f, nu1::Symbol, k1, nu2::Symbol, k2, ρ, Q::QuadInfo)
     ν2 = get_nu(Q, nu2, k2)
     jmin = max(minimum(rowvals(ν1)), minimum(rowvals(ν2)))
     jmax = min(maximum(rowvals(ν1)), maximum(rowvals(ν2)))
-    return sum(Q.w[j] * f(Q.x[j], θ) * ν1[j] * ν2[j] for j in jmin:jmax)
+    return sum(j -> Q.w[j] * f(Q.x[j], θ) * ν1[j] * ν2[j], jmin:jmax)
 end
 
-function ρIP(θ, nu1, k1, f, fnu2, g, gnu2, k2, ρ)
+function ρIP(θ, nu1, k1, f, fnu2, g, gnu2, k2, ρ, Q::Nothing=nothing)
     return inner_product(nu1, k1, x -> f(x, θ), fnu2, x -> g(x, θ), gnu2, k2, ρ, int_order)
 end
 
@@ -137,10 +137,10 @@ function ρIP(θ, nu1::Symbol, k1, f, fnu2::Symbol, g, gnu2::Symbol, k2, ρ, Q::
     jmax = min(maximum(rowvals(ν1)), maximum(rowvals(fν2)))
     x = Q.x
     w = Q.w
-    return sum(w[j] * ν1[j] * (f(x[j], θ) * fν2[j] + g(x[j], θ) * gν2[j]) for j in jmin:jmax)
+    return sum(j -> w[j] * ν1[j] * (f(x[j], θ) * fν2[j] + g(x[j], θ) * gν2[j]), jmin:jmax)
 end
 
-function ρIP(θ, shot, sym, nu1, k1, fnu2, gnu2, k2, ρ, m, Q::Nothing)
+function ρIP(θ, shot, sym, nu1, k1, fnu2, gnu2, k2, ρ, m, Q::Nothing=nothing)
 
     smt, cmt = sincos(m * θ)
 
@@ -186,32 +186,34 @@ end
 function int_cs_ρρ_ρθ(j, l, m, ν1, fν2, gν2, Q)
     grr = Q.gρρ[j, l]
     grt = Q.gρθ[j, l]
-    f = -Fcos[m, l] * grr
-    g = m * Fsin[m, l] * grt
+    f = -(m == 0 ? 1.0 : Q.Fcos[m, l]) * grr
+    g = m == 0 ? 0.0 : m * Q.Fsin[m, l] * grt
     return ν1[j] * (f * fν2[j] + g * gν2[j])
 end
 
 function int_cs_ρθ_θθ(j, l, m, ν1, fν2, gν2, Q)
     grt = Q.gρθ[j, l]
     gtt = Q.gθθ[j, l]
-    f = -Fcos[m, l] * grt
-    g = m * Fsin[m, l] * gtt
+    f = -(m == 0 ? 1.0 : Q.Fcos[m, l]) * grt
+    g = m == 0 ? 0.0 : m * Q.Fsin[m, l] * gtt
     return ν1[j] * (f * fν2[j] + g * gν2[j])
 end
 
 function int_sc_ρρ_ρθ(j, l, m, ν1, fν2, gν2, Q)
+    m == 0 && return 0.0
     grr = Q.gρρ[j, l]
     grt = Q.gρθ[j, l]
-    f = -Fsin[m, l] * grr
-    g = -m * Fcos[m, l] * grt
+    f = -Q.Fsin[m, l] * grr
+    g = -m * Q.Fcos[m, l] * grt
     return ν1[j] * (f * fν2[j] + g * gν2[j])
 end
 
 function int_sc_ρθ_θθ(j, l, m, ν1, fν2, gν2, Q)
+    m == 0 && return 0.0
     grt = Q.gρθ[j, l]
     gtt = Q.gθθ[j, l]
-    f = -Fsin[m, l] * grt
-    g = -m * Fcos[m, l] * gtt
+    f = -Q.Fsin[m, l] * grt
+    g = -m * Q.Fcos[m, l] * gtt
     return ν1[j] * (f * fν2[j] + g * gν2[j])
 end
 
@@ -229,13 +231,13 @@ function ρIP(θ, shot, sym, nu1::Symbol, k1, fnu2::Symbol, gnu2::Symbol, k2, ρ
 
     I = 0.0
     if sym === :cs_ρρ_ρθ
-        I = sum(int_cs_ρρ_ρθ(j, l, m, ν1, fν2, gν2, Q) for j in jmin:jmax)
+        I = sum(j -> Q.w[j] *int_cs_ρρ_ρθ(j, l, m, ν1, fν2, gν2, Q), jmin:jmax)
     elseif sym === :cs_ρθ_θθ
-        I = sum(int_cs_ρθ_θθ(j, l, m, ν1, fν2, gν2, Q) for j in jmin:jmax)
+        I = sum(j -> Q.w[j] *int_cs_ρθ_θθ(j, l, m, ν1, fν2, gν2, Q), jmin:jmax)
     elseif sym === :sc_ρρ_ρθ
-        I = sum(int_sc_ρρ_ρθ(j, l, m, ν1, fν2, gν2, Q) for j in jmin:jmax)
+        I = sum(j -> Q.w[j] *int_sc_ρρ_ρθ(j, l, m, ν1, fν2, gν2, Q), jmin:jmax)
     elseif sym === :sc_ρθ_θθ
-        I = sum(int_sc_ρθ_θθ(j, l, m, ν1, fν2, gν2, Q) for j in jmin:jmax)
+        I = sum(j -> Q.w[j] *int_sc_ρθ_θθ(j, l, m, ν1, fν2, gν2, Q), jmin:jmax)
     end
     return I
 end
@@ -275,7 +277,7 @@ function int_ab(x, fa, ga, fb, gb, nu1, D_nu1, nu2, D_nu2)
     return SVector(I1, I2)
 end
 
-function int_cos(shot, x, θ, ncmt, msmt, nu1, D_nu1, nu2, D_nu2)
+function int_cos(shot::Shot, x::Real, θ::Real, ncmt, msmt, nu1, D_nu1, nu2, D_nu2)
     grr, grt, gtt = gρρ_gρθ_gθθ(shot, x, θ)
     f = ncmt * grr
     g = msmt * grt
@@ -284,7 +286,7 @@ function int_cos(shot, x, θ, ncmt, msmt, nu1, D_nu1, nu2, D_nu2)
     return int_ab(x, f, g, df, dg, nu1, D_nu1, nu2, D_nu2)
 end
 
-function int_sin(shot, x, θ, nsmt, nmcmt, nu1, D_nu1, nu2, D_nu2)
+function int_sin(shot::Shot, x::Real, θ::Real, nsmt, nmcmt, nu1, D_nu1, nu2, D_nu2)
     grr, grt, gtt = gρρ_gρθ_gθθ(shot, x, θ)
     f = nsmt * grr
     g = nmcmt * grt
@@ -293,7 +295,7 @@ function int_sin(shot, x, θ, nsmt, nmcmt, nu1, D_nu1, nu2, D_nu2)
     return int_ab(x, f, g, df, dg, nu1, D_nu1, nu2, D_nu2)
 end
 
-function dual_ρIP(θ, shot, Ftype::Symbol, m::Integer, ν1_type::Symbol, k1, ν2_type::Symbol, k2, ρ)
+function dual_ρIP(θ, shot, Ftype::Symbol, m::Integer, ν1_type::Symbol, k1, ν2_type::Symbol, k2, ρ, Q::Nothing=nothing)
 
     nu1   = x -> (ν1_type === :odd) ? νo(x, k1, ρ)   : νe(x, k1, ρ)
     D_nu1 = x -> (ν1_type === :odd) ? D_νo(x, k1, ρ) : D_νe(x, k1, ρ)
@@ -312,6 +314,98 @@ function dual_ρIP(θ, shot, Ftype::Symbol, m::Integer, ν1_type::Symbol, k1, ν
         nsmt = -smt
         nmcmt = -m * cmt
         I, dI = dual_inner_product(x -> int_sin(shot, x, θ, nsmt, nmcmt, nu1, D_nu1, nu2, D_nu2), k1, k2, ρ, int_order)
+    end
+    return I, dI
+end
+
+function int_cos(j::Int, l::Int, ncmt, msmt, ν1, D_ν1, ν2, D_ν2, Q::QuadInfo)
+    grr = Q.gρρ[j, l]
+    grt = Q.gρθ[j, l]
+    gtt = Q.gθθ[j, l]
+    f = ncmt * grr
+    g = msmt * grt
+    df = ncmt * grt
+    dg = msmt * gtt
+    I1 = D_ν1[j] * (f * D_ν2[j] + g * ν2[j])
+    I2 = ν1[j] * (df * D_ν2[j] + dg * ν2[j])
+    return SVector(I1, I2)
+end
+
+function int_sin(j::Int, l::Int, nsmt, nmcmt, ν1, D_ν1, ν2, D_ν2, Q::QuadInfo)
+    grr = Q.gρρ[j, l]
+    grt = Q.gρθ[j, l]
+    gtt = Q.gθθ[j, l]
+    f = nsmt * grr
+    g = nmcmt * grt
+    df = nsmt * grt
+    dg = nmcmt * gtt
+    I1 = D_ν1[j] * (f * D_ν2[j] + g * ν2[j])
+    I2 = ν1[j] * (df * D_ν2[j] + dg * ν2[j])
+    return SVector(I1, I2)
+end
+
+function dual_setup(θ, m::Integer, ν1_type::Symbol, k1, ν2_type::Symbol, k2, Q::QuadInfo)
+    D_ν1_type = (ν1_type === :odd) ? :D_odd : :D_even
+    ν1   = get_nu(Q, ν1_type, k1)
+    D_ν1 = get_nu(Q, D_ν1_type, k1)
+
+    D_ν2_type = (ν2_type === :odd) ? :D_odd : :D_even
+    ν2   = get_nu(Q, ν2_type, k2)
+    D_ν2 = get_nu(Q, D_ν2_type, k2)
+
+    l = MillerExtendedHarmonic.θindex(θ, Q.Fsin)
+
+    smt = (m == 0) ? 0.0 : Q.Fsin[m, l]
+    cmt = (m == 0) ? 1.0 : Q.Fcos[m, l]
+
+    jmin = max(minimum(rowvals(ν1)), minimum(rowvals(ν2)))
+    jmax = min(maximum(rowvals(ν1)), maximum(rowvals(ν2)))
+    return ν1, D_ν1, ν2, D_ν2, l, smt, cmt, jmin, jmax
+end
+
+function dual_ρIP(θ, shot, Ftype::Symbol, m::Integer, ν1_type::Symbol, k1, ν2_type::Symbol, k2, ρ, Q::QuadInfo)
+    if Ftype === :cos
+        I, dI = dual_ρIP_cos(θ, m, ν1_type, k1, ν2_type, k2, Q)
+    elseif Ftype === :sin
+        I, dI = dual_ρIP_sin(θ, m, ν1_type, k1, ν2_type, k2, Q)
+    end
+    return I, dI
+end
+
+function dual_ρIP_cos(θ, m::Integer, ν1_type::Symbol, k1, ν2_type::Symbol, k2, Q::QuadInfo)
+
+    abs(k1 - k2) > 1 && return 0.0, 0.0
+
+    ν1, D_ν1, ν2, D_ν2, l, smt, cmt, jmin, jmax = dual_setup(θ, m, ν1_type, k1, ν2_type, k2, Q)
+
+    ncmt = -cmt
+    msmt = m * smt
+    I = 0.0
+    dI = 0.0
+    for j in jmin:jmax
+        i, di = Q.w[j] .* int_cos(j, l, ncmt, msmt, ν1, D_ν1, ν2, D_ν2, Q)
+        I += i
+        dI += di
+    end
+    return I, dI
+end
+
+function dual_ρIP_sin(θ, m::Integer, ν1_type::Symbol, k1, ν2_type::Symbol, k2, Q::QuadInfo)
+
+    abs(k1 - k2) > 1 && return 0.0, 0.0
+
+    ν1, D_ν1, ν2, D_ν2, l, smt, cmt, jmin, jmax = dual_setup(θ, m, ν1_type, k1, ν2_type, k2, Q)
+
+    I  = 0.0
+    dI = 0.0
+    nsmt = -smt
+    nmcmt = -m * cmt
+    I  = 0.0
+    dI = 0.0
+    for j in jmin:jmax
+        i, di = Q.w[j] .* int_sin(j, l, nsmt, nmcmt, ν1, D_ν1, ν2, D_ν2, Q)
+        I += i
+        dI += di
     end
     return I, dI
 end

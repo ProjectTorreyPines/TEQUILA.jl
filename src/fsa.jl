@@ -3,7 +3,7 @@ function trapa(f::F1; min_level=3, max_level=20, tol::Real=eps(typeof(1.0))) whe
     for l in 1:max_level
         dx = twopi / 2^l
         X = range(0, twopi, 2^l + 1)[2:2:end]
-        int2 = dx * sum(f(x) for x in X)
+        int2 = dx * sum(f, X)
         int = 0.5 * int + int2
         if l >= min_level
             abs(int <= tol) && break

@@ -151,63 +151,139 @@ end
 ##########################################################
 
 function evaluate_csx!(shot::Shot, k::Integer, nu_ou, nu_eu, nu_ol, nu_el; tid = Threads.threadid())
-    cx = get_tmp(shot._cx[tid], nu_ou)
-    sx = get_tmp(shot._sx[tid], nu_ou)
-    @inbounds for m in eachindex(shot.cfe)
-        cx[m] = evaluate_inbounds(shot.cfe[m], k, nu_ou, nu_eu, nu_ol, nu_el)
-        sx[m] = evaluate_inbounds(shot.sfe[m], k, nu_ou, nu_eu, nu_ol, nu_el)
+    return evaluate_csx!(shot._cx, shot._sx, shot.cfe, shot.sfe, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
+end
+
+function evaluate_csx!(cxs, sxs, cfe, sfe, k::Integer, nu_ou, nu_eu, nu_ol, nu_el; tid = Threads.threadid())
+    cx = get_tmp(cxs[tid], nu_ou)
+    sx = get_tmp(sxs[tid], nu_ou)
+    @inbounds for m in eachindex(cfe)
+        cx[m] = evaluate_inbounds(cfe[m], k, nu_ou, nu_eu, nu_ol, nu_el)
+        sx[m] = evaluate_inbounds(sfe[m], k, nu_ou, nu_eu, nu_ol, nu_el)
     end
     return cx, sx
 end
 
+function evaluate_csx(cfe, sfe, k::Integer, nu_ou, nu_eu, nu_ol, nu_el)
+    cx = [evaluate_inbounds(c, k, nu_ou, nu_eu, nu_ol, nu_el) for c in cfe]
+    sx = [evaluate_inbounds(s, k, nu_ou, nu_eu, nu_ol, nu_el) for s in sfe]
+    return cx, sx
+end
+
 function evaluate_dcsx!(shot::Shot, k::Integer, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid = Threads.threadid())
-    dcx = get_tmp(shot._dcx[tid], D_nu_ou)
-    dsx = get_tmp(shot._dsx[tid], D_nu_ou)
-    @inbounds for m in eachindex(shot.cfe)
-        dcx[m] =  evaluate_inbounds(shot.cfe[m], k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-        dsx[m] =  evaluate_inbounds(shot.sfe[m], k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    return evaluate_dcsx!(shot._dcx, shot._dsx, shot.cfe, shot.sfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
+end
+
+function evaluate_dcsx!(dcxs, dsxs, cfe, sfe, k::Integer, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid = Threads.threadid())
+    dcx = get_tmp(dcxs[tid], D_nu_ou)
+    dsx = get_tmp(dsxs[tid], D_nu_ou)
+    @inbounds for m in eachindex(cfe)
+        dcx[m] =  evaluate_inbounds(cfe[m], k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+        dsx[m] =  evaluate_inbounds(sfe[m], k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     end
     return dcx, dsx
 end
 
+function evaluate_dcsx(cfe, sfe, k::Integer, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dcx = [evaluate_inbounds(c, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el) for c in cfe]
+    dsx = [evaluate_inbounds(s, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el) for s in sfe]
+    return dcx, dsx
+end
+
 function compute_MXH(shot::Shot, ρ::Real; tid = Threads.threadid())
-    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
-    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    Z0x = evaluate_inbounds(shot.Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
+    return compute_MXH(shot.ρ, ρ, shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe,
+                       shot.cfe, shot.sfe, shot._cx, shot._sx; tid)
+end
+
+function compute_MXH(ρs::AbstractVector{<:Real}, ρ::Real, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, cxs, sxs; tid = Threads.threadid())
+    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(ρs, ρ)
+    R0x = evaluate_inbounds(R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    Z0x = evaluate_inbounds(Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    cx, sx = evaluate_csx!(cxs, sxs, cfe, sfe, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
+    return R0x, Z0x, ϵx, κx, c0x, cx, sx
+end
+
+function compute_MXH(ρs::AbstractVector{<:Real}, ρ::Real, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe)
+    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(ρs, ρ)
+    R0x = evaluate_inbounds(R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    Z0x = evaluate_inbounds(Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    cx, sx = evaluate_csx(cfe, sfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     return R0x, Z0x, ϵx, κx, c0x, cx, sx
 end
 
 function compute_D_MXH(shot::Shot, ρ::Real; tid = Threads.threadid())
-    k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_D_bases(shot.ρ, ρ)
-    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
+    return compute_D_MXH(shot.ρ, ρ, shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe,
+                       shot.cfe, shot.sfe, shot._dcx, shot._dsx; tid)
+end
+
+function compute_D_MXH(ρs::AbstractVector{<:Real}, ρ::Real, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, dcxs, dsxs; tid = Threads.threadid())
+    k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_D_bases(ρs, ρ)
+    dR0x = evaluate_inbounds(R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dZ0x = evaluate_inbounds(Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dϵx = evaluate_inbounds(ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dκx = evaluate_inbounds(κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dc0x = evaluate_inbounds(c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dcx, dsx = evaluate_dcsx!(dcxs, dsxs, cfe, sfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
+    return dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx
+end
+
+function compute_D_MXH(ρs::AbstractVector{<:Real}, ρ::Real, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe)
+    k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_D_bases(ρs, ρ)
+    dR0x = evaluate_inbounds(R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dZ0x = evaluate_inbounds(Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dϵx = evaluate_inbounds(ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dκx = evaluate_inbounds(κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dc0x = evaluate_inbounds(c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dcx, dsx = evaluate_dcsx(cfe, sfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     return dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx
 end
 
 function compute_both_MXH(shot::Shot, ρ::Real; tid = Threads.threadid())
-    k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
-    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    Z0x = evaluate_inbounds(shot.Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
-    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
+    return compute_both_MXH(shot.ρ, ρ, shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe,
+                       shot.cfe, shot.sfe, shot._cx, shot._sx, shot._dcx, shot._dsx; tid)
+end
+
+function compute_both_MXH(ρs::AbstractVector{<:Real}, ρ::Real, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, cxs, sxs, dcxs, dsxs; tid = Threads.threadid())
+    k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(ρs, ρ)
+    R0x = evaluate_inbounds(R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    Z0x = evaluate_inbounds(Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    cx, sx = evaluate_csx!(cxs, sxs, cfe, sfe, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
+    dR0x = evaluate_inbounds(R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dZ0x = evaluate_inbounds(Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dϵx = evaluate_inbounds(ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dκx = evaluate_inbounds(κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dc0x = evaluate_inbounds(c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dcx, dsx = evaluate_dcsx!(dcxs, dsxs, cfe, sfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
     return R0x, Z0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx
 end
+
+function compute_both_MXH(ρs::AbstractVector{<:Real}, ρ::Real, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe)
+    k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(ρs, ρ)
+    R0x = evaluate_inbounds(R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    Z0x = evaluate_inbounds(Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    cx, sx = evaluate_csx(cfe, sfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    dR0x = evaluate_inbounds(R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dZ0x = evaluate_inbounds(Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dϵx = evaluate_inbounds(ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dκx = evaluate_inbounds(κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dc0x = evaluate_inbounds(c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dcx, dsx = evaluate_dcsx(cfe, sfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    return R0x, Z0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx
+end
+
+
 
 function MillerExtendedHarmonic.MXH(shot::Shot, ρ::Real; tid = Threads.threadid())
     R0x, Z0x, ϵx, κx, c0x, cx, sx = compute_MXH(shot, ρ; tid)
@@ -432,5 +508,5 @@ end
 
 function gρρ_gρθ_gθθ(shot::Shot, ρ::Real, θ::Real; tid = Threads.threadid())
     R0x, _, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx = compute_both_MXH(shot, ρ; tid)
-    return MillerExtendedHarmonic.gρρ_gρθ_gθθ(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx, shot._Fsin, shot._Fcos)
+    return MillerExtendedHarmonic.gρρ_gρθ_gθθ(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx, shot.Q.Fsin, shot.Q.Fcos)
 end

@@ -1,55 +1,18 @@
-const ProfType = Union{Nothing, FE_rep, Function}
-const IpType = Union{Nothing, Real}
-
-mutable struct Shot{I1<:Integer, VR1<:AbstractVector{<:Real}, MR1<:AbstractMatrix{<:Real}, MR2<:AbstractMatrix{<:Real},
-                    PT1<:ProfType, PT2<:ProfType, PT3<:ProfType, PT4<:ProfType, PT5<:ProfType,
-                    R1<:Real, R2<:Real, IP1<:IpType,
-                    FE1<:FE_rep, VFE1<:AbstractVector{<:FE_rep}, VDC1<:Vector{<:DiffCache}, F1<:Factorization,
-                    MR3<:AbstractMatrix{<:Real}}  <: AbstractEquilibrium
-    N :: I1
-    M :: I1
-    ρ :: VR1
-    surfaces :: MR1
-    C :: MR2
-    P :: PT1
-    dP_dψ :: PT2
-    F_dF_dψ :: PT3
-    Jt_R :: PT4
-    Jt :: PT5
-    Pbnd :: R1
-    Fbnd :: R2
-    Ip_target :: IP1
-    R0fe::FE1
-    Z0fe::FE1
-    ϵfe::FE1
-    κfe::FE1
-    c0fe::FE1
-    cfe :: VFE1
-    sfe :: VFE1
-    _cx :: VDC1
-    _sx :: VDC1
-    _dcx :: VDC1
-    _dsx :: VDC1
-    _Afac :: F1
-    _Fsin :: MR3
-    _Fcos :: MR3
+function compute_Cmatrix(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, Ψ::F1, Q::QuadInfo) where {F1}
+    return compute_Cmatrix(N, M, ρ, Ψ, Q, factorize(mass_matrix(N, ρ)))
 end
 
-function compute_Cmatrix(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, Ψ::F1) where {F1}
-    return compute_Cmatrix(N, M, ρ, Ψ, factorize(mass_matrix(N, ρ)))
-end
-
-function compute_Cmatrix(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, Ψ::F1, Afac::Factorization) where {F1}
+function compute_Cmatrix(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, Ψ::F1, Q::QuadInfo, Afac::Factorization) where {F1}
     C = zeros(2N, 2M+1)
     Fi, _, Fo, P = fft_prealloc(M)
-    return compute_Cmatrix!(C, N, M, ρ, Ψ, Afac, Fi, Fo, P)
+    return compute_Cmatrix!(C, N, M, ρ, Ψ, Q, Afac, Fi, Fo, P)
 end
 
 function compute_Cmatrix!(C::AbstractMatrix{<:Real}, N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, Ψ_ρθ::F1,
-                          Afac::Factorization, Fi::AbstractVector{<:Complex}, Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan) where {F1}
+                          Q::QuadInfo, Afac::Factorization, Fi::AbstractVector{<:Complex}, Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan) where {F1}
     for j in 1:N
-        @views θFD_ρIP_f_nu!(C[2j-1, :], Ψ_ρθ, νo, j, ρ, M, Fi, Fo, P)
-        @views θFD_ρIP_f_nu!(C[2j  , :], Ψ_ρθ, νe, j, ρ, M, Fi, Fo, P)
+        @views θFD_ρIP_f_nu!(C[2j-1, :], Ψ_ρθ, :odd, j, M, Fi, Fo, P, Q)
+        @views θFD_ρIP_f_nu!(C[2j  , :], Ψ_ρθ, :even, j, M, Fi, Fo, P, Q)
     end
     ldiv!(Afac, C)
     @views C[end,:] .= 0.0 # Ensures psi=0 on boundary
@@ -79,9 +42,11 @@ function Shot(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, surfaces
               F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
               Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing, zero_boundary=false) where {F1}
     S_FE = surfaces_FE(ρ, surfaces)
+    MXH_modes = (size(surfaces, 1) - 5) ÷ 2
+    Q = QuadInfo(ρ, M, MXH_modes, S_FE...)
     Ψ_ρθ = (x, t) -> Ψ_ρθ1(x, t, Ψ, S_FE, zero_boundary)
-    C = compute_Cmatrix(N, M, ρ, Ψ_ρθ)
-    return Shot(N, M, ρ, surfaces, C, S_FE...; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
+    C = compute_Cmatrix(N, M, ρ, Ψ_ρθ, Q)
+    return Shot(N, M, ρ, surfaces, C, S_FE..., Q; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
 function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ;
@@ -102,6 +67,7 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ;
     end
 
     S_FE = surfaces_FE(ρ, surfaces)
+    Q = QuadInfo(ρ, M, L, S_FE...)
     tmp_surface = deepcopy(boundary)
 
     function Ψ_ρθ(ρ, θ)
@@ -110,9 +76,9 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ;
         return Ψ(tmp_surface(θ)...)
     end
 
-    C = compute_Cmatrix(N, M, ρ, Ψ_ρθ)
+    C = compute_Cmatrix(N, M, ρ, Ψ_ρθ, Q)
 
-    return Shot(N, M, ρ, surfaces, C, S_FE...; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
+    return Shot(N, M, ρ, surfaces, C, S_FE..., Q; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
 function Shot(N :: Integer, M :: Integer, boundary :: MXH;
@@ -133,10 +99,11 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH;
     end
 
     S_FE = surfaces_FE(ρ, surfaces)
+    Q = QuadInfo(ρ, M, L, S_FE...)
 
     C = zeros(2N, 2M+1)
 
-    shot = Shot(N, M, ρ, surfaces, C, S_FE...; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
+    shot = Shot(N, M, ρ, surfaces, C, S_FE..., Q; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 
     if approximate_psi
         I0 = (Ip_target !== nothing) ? Ip_target : Ip(shot)
@@ -145,7 +112,7 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH;
         ψ0  = 0.5 * μ₀ * boundary.R0 * I0 / sqrt(0.5 * (1.0 + boundary.κ ^ 2))
         C[2:2:end, 1] .= ψ0 .* ((ρ ./ a) .^ 2 .- 1.0)
         C[1:2:end, 1] .= 2.0 .* ψ0 .* ρ ./ (a .^ 2)
-        shot = Shot(N, M, ρ, surfaces, C, S_FE...; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
+        shot = Shot(N, M, ρ, surfaces, C, S_FE..., Q; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
     end
 
     return shot
@@ -167,28 +134,29 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ::FE_rep;
     end
 
     S_FE = surfaces_FE(ρ, surfaces)
+    Q = QuadInfo(ρ, M, L, S_FE...)
 
     C = zeros(2N, 2M+1)
     C[2:2:end, 1] .= Ψ.(ρ)
     C[1:2:end, 1] .= D.(Ref(Ψ), ρ)
 
-    return Shot(N, M, ρ, surfaces, C, S_FE...; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
+    return Shot(N, M, ρ, surfaces, C, S_FE..., Q; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
 function Shot(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, surfaces::AbstractMatrix{<:Real},
               C::AbstractMatrix{<:Real}, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep,
-              cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep};
+              cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep}, Q::QuadInfo;
               P::ProfType=nothing, dP_dψ::ProfType=nothing,
               F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
               Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing)
     Afac = factorize(mass_matrix(N, ρ))
-    return Shot(N, M, ρ, surfaces, C, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, Afac;
+    return Shot(N, M, ρ, surfaces, C, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, Q, Afac;
                 P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
 function Shot(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, surfaces::AbstractMatrix{<:Real},
               C::AbstractMatrix{<:Real}, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep,
-              cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep}, Afac::Factorization;
+              cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep}, Q::QuadInfo, Afac::Factorization;
               P::ProfType=nothing, dP_dψ::ProfType=nothing,
               F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
               Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing)
@@ -197,18 +165,8 @@ function Shot(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, surfaces::Abst
     sx  = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
     dcx = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
     dsx = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
-
-    Fθ = range(0, twopi, 2M + 5)[1:end-1]
-    Fsin = zeros(L, 2M + 4)
-    Fcos = zeros(L, 2M + 4)
-    for m in 1:(2M + 4)
-        for l in 1:L
-            Fsin[l, m], Fcos[l, m] = sincos(l * Fθ[m])
-        end
-    end
-
     Shot(N, M, ρ, surfaces, C, P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target,
-         R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, cx, sx, dcx, dsx, Afac, Fsin, Fcos)
+         R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, Q, cx, sx, dcx, dsx, Afac)
 end
 
 function Shot(N :: Integer, M :: Integer, MXH_modes::Integer, filename::String; fix_Ip::Bool=false)
@@ -257,7 +215,7 @@ function Shot(shot; P::ProfType=nothing, dP_dψ::ProfType=nothing,
 
     return Shot(shot.N, shot.M, deepcopy(shot.ρ), deepcopy(shot.surfaces), deepcopy(shot.C),
                 deepcopy(shot.R0fe), deepcopy(shot.Z0fe), deepcopy(shot.ϵfe), deepcopy(shot.κfe),
-                deepcopy(shot.c0fe), deepcopy(shot.cfe), deepcopy(shot.sfe);
+                deepcopy(shot.c0fe), deepcopy(shot.cfe), deepcopy(shot.sfe), deepcopy(shot.Q);
                 P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 

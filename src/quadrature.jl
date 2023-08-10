@@ -76,15 +76,16 @@ function nu_quadrature(nu::Function, xq::AbstractVector{<:Real}, k::Int, ρ::Abs
 end
 
 function get_nu(Q::QuadInfo, nu::Symbol, k::Int)
-    return (if nu === :odd
-                Q.νo[k]
-            elseif nu === :even
-                Q.νe[k]
-            elseif nu === :D_odd
-                Q.D_νo[k]
-            elseif nu === :D_even
-                Q.D_νe[k]
-            end)
+    @assert nu in (:odd, :even, :D_odd, :D_even)
+    if nu === :odd
+        return Q.νo[k]
+    elseif nu === :even
+        return Q.νe[k]
+    elseif nu === :D_odd
+        return Q.D_νo[k]
+    else
+        return Q.D_νe[k]
+    end
 end
 
 

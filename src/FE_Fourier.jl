@@ -265,57 +265,12 @@ function θFD_ρIP!(CS, shot::Shot, sym::Symbol, nu1, k1, fnu2, gnu2, k2, ρ, m,
     return fourier_decompose!(CS, θ -> ρIP(θ, shot, sym, nu1, k1, fnu2, gnu2, k2, ρ, m, Q), M, Fi, Fo, P, Q; reset_CS, fft_op)
 end
 
-function compute_element(CS::AbstractVector{<:Real}, shot::Shot, Ftype::Symbol, m, nu1_type, k1, nu2_type, k2, ρ,  M, Fi, dFi, Fo, P, Q=nothing; reset_CS = false)
-    return dual_fourier_decompose!(CS, θ -> dual_ρIP(θ, shot, Ftype, m, nu1_type, k1, nu2_type, k2, ρ, Q), M, Fi, dFi, Fo, P, Q; reset_CS)
+function compute_element_cos(CS::AbstractVector{<:Real}, m, nu1_type, k1, nu2_type, k2, M, Fi, dFi, Fo, P, Q=nothing; reset_CS = false)
+    return dual_fourier_decompose!(CS, θ -> dual_ρIP_cos(θ, m, nu1_type, k1, nu2_type, k2, Q), M, Fi, dFi, Fo, P, Q; reset_CS)
 end
 
-function int_ab(x, fa, ga, fb, gb, nu1, D_nu1, nu2, D_nu2)
-    Dn2 = D_nu2(x)
-    n2  = nu2(x)
-    I1 = D_nu1(x) * (fa * Dn2 + ga * n2)
-    I2 = nu1(x) * (fb * Dn2 + gb * n2)
-    return SVector(I1, I2)
-end
-
-function int_cos(shot::Shot, x::Real, θ::Real, ncmt, msmt, nu1, D_nu1, nu2, D_nu2)
-    grr, grt, gtt = gρρ_gρθ_gθθ(shot, x, θ)
-    f = ncmt * grr
-    g = msmt * grt
-    df = ncmt * grt
-    dg = msmt * gtt
-    return int_ab(x, f, g, df, dg, nu1, D_nu1, nu2, D_nu2)
-end
-
-function int_sin(shot::Shot, x::Real, θ::Real, nsmt, nmcmt, nu1, D_nu1, nu2, D_nu2)
-    grr, grt, gtt = gρρ_gρθ_gθθ(shot, x, θ)
-    f = nsmt * grr
-    g = nmcmt * grt
-    df = nsmt * grt
-    dg = nmcmt * gtt
-    return int_ab(x, f, g, df, dg, nu1, D_nu1, nu2, D_nu2)
-end
-
-function dual_ρIP(θ, shot, Ftype::Symbol, m::Integer, ν1_type::Symbol, k1, ν2_type::Symbol, k2, ρ, Q::Nothing=nothing)
-
-    nu1   = x -> (ν1_type === :odd) ? νo(x, k1, ρ)   : νe(x, k1, ρ)
-    D_nu1 = x -> (ν1_type === :odd) ? D_νo(x, k1, ρ) : D_νe(x, k1, ρ)
-    nu2   = x -> (ν2_type === :odd) ? νo(x, k2, ρ)   : νe(x, k2, ρ)
-    D_nu2 = x -> (ν2_type === :odd) ? D_νo(x, k2, ρ) : D_νe(x, k2, ρ)
-
-    smt, cmt = sincos(m * θ)
-
-    I  = 0.0
-    dI = 0.0
-    if Ftype === :cos
-        ncmt = -cmt
-        msmt = m * smt
-        I, dI = dual_inner_product(x -> int_cos(shot, x, θ, ncmt, msmt, nu1, D_nu1, nu2, D_nu2), k1, k2, ρ, int_order)
-    elseif Ftype === :sin
-        nsmt = -smt
-        nmcmt = -m * cmt
-        I, dI = dual_inner_product(x -> int_sin(shot, x, θ, nsmt, nmcmt, nu1, D_nu1, nu2, D_nu2), k1, k2, ρ, int_order)
-    end
-    return I, dI
+function compute_element_sin(CS::AbstractVector{<:Real}, m, nu1_type, k1, nu2_type, k2, M, Fi, dFi, Fo, P, Q=nothing; reset_CS = false)
+    return dual_fourier_decompose!(CS, θ -> dual_ρIP_sin(θ, m, nu1_type, k1, nu2_type, k2, Q), M, Fi, dFi, Fo, P, Q; reset_CS)
 end
 
 function int_cos(j::Int, l::Int, ncmt, msmt, ν1, D_ν1, ν2, D_ν2, Q::QuadInfo)
@@ -363,49 +318,18 @@ function dual_setup(θ, m::Integer, ν1_type::Symbol, k1, ν2_type::Symbol, k2, 
     return ν1, D_ν1, ν2, D_ν2, l, smt, cmt, jmin, jmax
 end
 
-function dual_ρIP(θ, shot, Ftype::Symbol, m::Integer, ν1_type::Symbol, k1, ν2_type::Symbol, k2, ρ, Q::QuadInfo)
-    if Ftype === :cos
-        I, dI = dual_ρIP_cos(θ, m, ν1_type, k1, ν2_type, k2, Q)
-    elseif Ftype === :sin
-        I, dI = dual_ρIP_sin(θ, m, ν1_type, k1, ν2_type, k2, Q)
-    end
-    return I, dI
-end
-
 function dual_ρIP_cos(θ, m::Integer, ν1_type::Symbol, k1, ν2_type::Symbol, k2, Q::QuadInfo)
-
     abs(k1 - k2) > 1 && return 0.0, 0.0
-
     ν1, D_ν1, ν2, D_ν2, l, smt, cmt, jmin, jmax = dual_setup(θ, m, ν1_type, k1, ν2_type, k2, Q)
-
     ncmt = -cmt
     msmt = m * smt
-    I = 0.0
-    dI = 0.0
-    for j in jmin:jmax
-        i, di = Q.w[j] .* int_cos(j, l, ncmt, msmt, ν1, D_ν1, ν2, D_ν2, Q)
-        I += i
-        dI += di
-    end
-    return I, dI
+    return sum(j -> Q.w[j] .* int_cos(j, l, ncmt, msmt, ν1, D_ν1, ν2, D_ν2, Q), jmin:jmax)
 end
 
 function dual_ρIP_sin(θ, m::Integer, ν1_type::Symbol, k1, ν2_type::Symbol, k2, Q::QuadInfo)
-
     abs(k1 - k2) > 1 && return 0.0, 0.0
-
     ν1, D_ν1, ν2, D_ν2, l, smt, cmt, jmin, jmax = dual_setup(θ, m, ν1_type, k1, ν2_type, k2, Q)
-
-    I  = 0.0
-    dI = 0.0
     nsmt = -smt
     nmcmt = -m * cmt
-    I  = 0.0
-    dI = 0.0
-    for j in jmin:jmax
-        i, di = Q.w[j] .* int_sin(j, l, nsmt, nmcmt, ν1, D_ν1, ν2, D_ν2, Q)
-        I += i
-        dI += di
-    end
-    return I, dI
+    return sum(j -> Q.w[j] .* int_sin(j, l, nsmt, nmcmt, ν1, D_ν1, ν2, D_ν2, Q), jmin:jmax)
 end

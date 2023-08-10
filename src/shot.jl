@@ -11,8 +11,8 @@ end
 function compute_Cmatrix!(C::AbstractMatrix{<:Real}, N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, Ψ_ρθ::F1,
                           Q::QuadInfo, Afac::Factorization, Fi::AbstractVector{<:Complex}, Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan) where {F1}
     for j in 1:N
-        @views θFD_ρIP_f_nu!(C[2j-1, :], Ψ_ρθ, :odd, j, ρ, M, Fi, Fo, P, Q)
-        @views θFD_ρIP_f_nu!(C[2j  , :], Ψ_ρθ, :even, j, ρ, M, Fi, Fo, P, Q)
+        @views θFD_ρIP_f_nu!(C[2j-1, :], Ψ_ρθ, :odd, j, M, Fi, Fo, P, Q)
+        @views θFD_ρIP_f_nu!(C[2j  , :], Ψ_ρθ, :even, j, M, Fi, Fo, P, Q)
     end
     ldiv!(Afac, C)
     @views C[end,:] .= 0.0 # Ensures psi=0 on boundary

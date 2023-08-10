@@ -106,25 +106,12 @@ function preallocate_Astar(shot)
     return sparse(X, Y, V)
 end
 
-function define_Astar(shot)
-    Astar = preallocate_Astar(shot)
-    define_Astar!(Astar, shot)
-    return Astar
-end
-
-function define_Astar!(Astar, shot)
-    Fis, dFis, Fos, Ps = fft_prealloc_threaded(shot.M)
-    define_Astar!(Astar, shot, Fis, dFis, Fos, Ps)
-    return
-end
-
 function define_Astar!(Astar, shot, Fis, dFis, Fos, Ps)
 
     Astar.nzval .= 0.0
 
     # Loop over columns of
-    #@Threads.threads
-    for m in 0:shot.M
+    @Threads.threads for m in 0:shot.M
         tid = Threads.threadid()
         define_Acol!(Astar, m, shot, Fis[tid], dFis[tid], Fos[tid], Ps[tid])
     end
@@ -198,15 +185,15 @@ function define_Acol!(Astar, m, shot, Fi, dFi, Fo, P)
         # sign flipped to account for later reversal
         if j == 1
             # ρ=0
-            @views fourier_decompose!(Astar[Jes, Ie + Mc], θ ->  -cos(m * θ) * gρρ(shot, 0.0, θ), M, Fi, Fo, P)
+            @views fourier_decompose!(Astar[Jes, Ie + Mc], θ ->  -cos(m * θ) * gρρ(shot, 0.0, θ), M, Fi, Fo, P, shot.Q)
             if m != 0
-                @views fourier_decompose!(Astar[Jes, Ie + Ms], θ ->  -sin(m * θ) * gρρ(shot, 0.0, θ), M, Fi, Fo, P)
+                @views fourier_decompose!(Astar[Jes, Ie + Ms], θ ->  -sin(m * θ) * gρρ(shot, 0.0, θ), M, Fi, Fo, P, shot.Q)
             end
         elseif j == N
             # ρ=1
-            @views fourier_decompose!(Astar[Jes, Ie + Mc], θ -> cos(m * θ) * gρρ(shot, 1.0, θ), M, Fi, Fo, P)
+            @views fourier_decompose!(Astar[Jes, Ie + Mc], θ -> cos(m * θ) * gρρ(shot, 1.0, θ), M, Fi, Fo, P, shot.Q)
             if m != 0
-                @views fourier_decompose!(Astar[Jes, Ie + Ms], θ -> sin(m * θ) * gρρ(shot, 1.0, θ), M, Fi, Fo, P)
+                @views fourier_decompose!(Astar[Jes, Ie + Ms], θ -> sin(m * θ) * gρρ(shot, 1.0, θ), M, Fi, Fo, P, shot.Q)
             end
         end
 
@@ -229,15 +216,15 @@ function define_Acol!(Astar, m, shot, Fi, dFi, Fo, P)
         # sign flipped to account for later reversal
         if j == 1
             # ρ=0
-            @views fourier_decompose!(Astar[Jes, Ie + Mc], θ ->  m * sin(m * θ) * gρθ(shot, 0.0, θ), M, Fi, Fo, P)
+            @views fourier_decompose!(Astar[Jes, Ie + Mc], θ ->  m * sin(m * θ) * gρθ(shot, 0.0, θ), M, Fi, Fo, P, shot.Q)
             if m != 0
-                @views fourier_decompose!(Astar[Jes, Ie + Ms], θ ->  -m * cos(m * θ) * gρθ(shot, 0.0, θ), M, Fi, Fo, P)
+                @views fourier_decompose!(Astar[Jes, Ie + Ms], θ ->  -m * cos(m * θ) * gρθ(shot, 0.0, θ), M, Fi, Fo, P, shot.Q)
             end
         elseif j == N
             # ρ=1
-            @views fourier_decompose!(Astar[Jes, Ie + Mc], θ -> -m * sin(m * θ) * gρθ(shot, 1.0, θ), M, Fi, Fo, P)
+            @views fourier_decompose!(Astar[Jes, Ie + Mc], θ -> -m * sin(m * θ) * gρθ(shot, 1.0, θ), M, Fi, Fo, P, shot.Q)
             if m != 0
-                @views fourier_decompose!(Astar[Jes, Ie + Ms], θ -> m * cos(m * θ) * gρθ(shot, 1.0, θ), M, Fi, Fo, P)
+                @views fourier_decompose!(Astar[Jes, Ie + Ms], θ -> m * cos(m * θ) * gρθ(shot, 1.0, θ), M, Fi, Fo, P, shot.Q)
             end
         end
 
@@ -284,24 +271,9 @@ function define_Acol!(Astar, m, shot, Fi, dFi, Fo, P)
 
 end
 
-function define_B(shot)
-    L = 2 * shot.N * (2 * shot.M + 1)
-    B = zeros(L)
-    define_B!(B, shot)
-    return B
-end
-
-function define_B!(B, shot)
-
-    Fi, dFi, Fo, P = fft_prealloc(shot.M)
-    define_B!(B, shot, Fi, Fo, P)
-    return
-end
-
 function define_B!(B, shot, Fi::AbstractVector{<:Complex}, Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan)
     N = shot.N
     M = shot.M
-    ρ = shot.ρ
 
     B .= 0.0
 
@@ -322,8 +294,8 @@ function define_B!(B, shot, Fi::AbstractVector{<:Complex}, Fo::AbstractVector{<:
         Jos = Jo .+ mrange
         Jes = Je .+ mrange
 
-        @views θFD_ρIP_f_nu!(B[Jos], rhs, :odd, j, ρ, M, Fi, Fo, P, shot.Q)
-        @views θFD_ρIP_f_nu!(B[Jes], rhs, :even, j, ρ, M, Fi, Fo, P, shot.Q)
+        @views θFD_ρIP_f_nu!(B[Jos], rhs, :odd, j, M, Fi, Fo, P, shot.Q)
+        @views θFD_ρIP_f_nu!(B[Jes], rhs, :even, j, M, Fi, Fo, P, shot.Q)
 
     end
     return

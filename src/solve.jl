@@ -20,9 +20,7 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0,
     C = zeros(L)
     Ψold = 0.0
     warn_concentric = false
-    if debug
-        _, _, Ψold = find_axis(refill)
-    end
+    _, _, Ψold = find_axis(refill)
 
     for i in 1:its
         debug && println("ITERATION $i")
@@ -51,17 +49,15 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0,
         end
 
         error = abs((Ψaxis-Ψold)/Ψaxis)
-        if debug
-            println("    Status: Ψaxis = $Ψaxis, Error: $error")
-            Ψold = Ψaxis
-        end
+        debug && println("    Status: Ψaxis = $Ψaxis, Error: $error")
+        Ψold = Ψaxis
         if error <= tol && i > 1
             debug && println("DONE: Successful convergence")
             break
         end
 
-        if i == its && debug
-            println("DONE: maximum iterations")
+        if i == its
+            debug && println("DONE: maximum iterations")
             break
         end
 

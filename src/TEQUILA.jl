@@ -111,7 +111,7 @@ export concentric_surface, concentric_surface!, surfaces_FE, R_Z, ρθ_RZ, surfa
 export Jacobian, gρρ, dR_dρ, dR_dθ, dZ_dρ, dZ_dθ
 
 include("fit_MXH.jl")
-export refit
+export refit!
 
 include("GS.jl")
 export preallocate_Astar, define_Astar, define_Astar!, set_bc!, define_B, define_B!

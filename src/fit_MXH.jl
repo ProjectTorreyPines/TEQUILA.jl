@@ -323,37 +323,54 @@ function fit_MXH!(flat, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fi, Fo, P)
 
 end
 
-function refit(shot::Shot)
-    Raxis, Zaxis, Ψaxis = find_axis(refill)
-    return refit(shot, Ψaxis, Raxis, Zaxis)
+function update_shot!(shot::Shot, surfaces, Ψaxis)
+    shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe, shot.cfe, shot.sfe = surfaces_FE(shot.ρ, surfaces)
+    shot.C .= 0.0
+    shot.C[2:2:end, 1] .= Ψaxis .* (1.0 .- shot.ρ.^2)
+    shot.C[1:2:end, 1] .= -2.0 .* Ψaxis .* shot.ρ
+    MXH_quadrature!(shot)
+    metrics_quadrature!(shot)
+    return shot
 end
 
-function refit(shot::Shot, Ψaxis::Real, Raxis::Real, Zaxis::Real)
-
-    L = length(shot.cfe)
-
+function refit!(shot::Shot, Ψaxis::Real, Raxis::Real, Zaxis::Real; debug::Bool=false, fit_fallback::Bool=true,)
     # Using ρ = rho poloidal (sqrt((Ψ-Ψaxis)/sqrt(Ψbnd-Ψaxis)))
-    lvls = Ψaxis .* (1.0 .- shot.ρ.^2)
+    local surfaces
+    warn_concentric = false
+    try
+        surfaces = fitted_surfaces(shot, Ψaxis, Raxis, Zaxis)
+    catch err
+       (isa(err, InterruptException) || !fit_fallback) && rethrow(err)
+       warn_concentric = true
+       if debug
+           println("    Warning: Fit fell back to concentric surfaces due to ", typeof(err))
+       end
+       surfaces = concentric_surfaces(shot, Raxis, Zaxis)
+    end
+    update_shot!(shot, surfaces, Ψaxis)
+    return shot, warn_concentric
+end
 
+function fitted_surfaces(shot, Ψaxis, Raxis, Zaxis)
+    L = length(shot.cfe)
     Fis, _, Fos, Ps = fft_prealloc_threaded(L)
 
     surfaces = deepcopy(shot.surfaces)
 
     ρaxis, _ = ρθ_RZ(shot, Raxis, Zaxis)
-    Threads.@threads for (k, lvl) in @view collect(enumerate(lvls))[2:end-1]
+    Threads.@threads for k in 2:(shot.N - 1)
+        lvl = Ψaxis * (1.0 - shot.ρ[k] ^ 2)
         tid = Threads.threadid()
         Fi = Fis[tid]
         Fo = Fos[tid]
         P  = Ps[tid]
-
         @views flat = surfaces[:, k]
-
         fit_MXH!(flat, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fi, Fo, P)
     end
 
     # Extrapolate or set to zero on-axis
-    ρ2 = sqrt((lvls[2]-lvls[1])/(lvls[end]-lvls[1]))
-    ρ3 = sqrt((lvls[3]-lvls[1])/(lvls[end]-lvls[1]))
+    ρ2 = shot.ρ[2]
+    ρ3 = shot.ρ[3]
     h = 1.0 / (ρ3 - ρ2)
     surfaces[1, 1] = h .* (surfaces[1, 2] .* ρ3 .- surfaces[1, 3] .* ρ2)
     surfaces[2, 1] = h .* (surfaces[2, 2] .* ρ3 .- surfaces[2, 3] .* ρ2)
@@ -361,29 +378,22 @@ function refit(shot::Shot, Ψaxis::Real, Raxis::Real, Zaxis::Real)
     surfaces[4, 1] = h .* (surfaces[4, 2] .* ρ3 .- surfaces[4, 3] .* ρ2)
     surfaces[5, 1] = h .* (surfaces[5, 2] .* ρ3 .- surfaces[5, 3] .* ρ2)
     @views surfaces[6:end, 1] .= 0.0
-
-    shot_refit = Shot(shot.N, shot.M, shot.ρ, surfaces, shot;
-                      P = shot.P, dP_dψ = shot.dP_dψ,
-                      F_dF_dψ = shot.F_dF_dψ, Jt_R = shot.Jt_R, Jt = shot.Jt,
-                      Pbnd = shot.Pbnd, Fbnd = shot.Fbnd, Ip_target = shot.Ip_target)
-
-    return shot_refit
-
+    return surfaces
 end
 
-function refit_concentric(shot::Shot, Raxis::Real, Zaxis::Real)
 
+function refit_concentric!(shot::Shot, Ψaxis::Real, Raxis::Real, Zaxis::Real)
+    surfaces = concentric_surfaces(shot, Raxis, Zaxis)
+    update_shot!(shot, surfaces, Ψaxis)
+    return shot
+end
+
+
+function concentric_surfaces(shot::Shot, Raxis::Real, Zaxis::Real)
     surfaces = deepcopy(shot.surfaces)
     @views boundary = shot.surfaces[:,end]
     for k in eachindex(shot.ρ)
         @views concentric_surface!(surfaces[:, k], shot.ρ[k], boundary; Raxis, Zaxis)
     end
-
-    shot_refit = Shot(shot.N, shot.M, shot.ρ, surfaces, shot;
-                      P = shot.P, dP_dψ = shot.dP_dψ,
-                      F_dF_dψ = shot.F_dF_dψ, Jt_R = shot.Jt_R, Jt = shot.Jt,
-                      Pbnd = shot.Pbnd, Fbnd = shot.Fbnd, Ip_target = shot.Ip_target)
-
-    return shot_refit
-
+    return surfaces
 end

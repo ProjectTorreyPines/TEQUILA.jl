@@ -45,20 +45,9 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0,
 
         if concentric_first && i == 1
             debug && println("    Concentric surfaces used for first iteration")
-            refill = refit_concentric(refill, Raxis, Zaxis)
+            refill = refit_concentric!(refill, Ψaxis, Raxis, Zaxis)
         else
-            (debug && i == 1) && println("    Trying full refit for first iteration")
-            try
-                refill = refit(refill, Ψaxis, Raxis, Zaxis)
-                warn_concentric = false
-            catch err
-               (isa(err, InterruptException) || !fit_fallback) && rethrow(err)
-               warn_concentric = true
-               if debug
-                   println("    Warning: Fit for iteration $i fell back to concentric surfaces due to ", typeof(err))
-               end
-               refill = refit_concentric(refill, Raxis, Zaxis)
-            end
+            refill, warn_concentric = refit!(refill, Ψaxis, Raxis, Zaxis; debug, fit_fallback)
         end
 
         error = abs((Ψaxis-Ψold)/Ψaxis)

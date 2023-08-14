@@ -111,7 +111,7 @@ function define_Astar!(Astar, shot, Fis, dFis, Fos, Ps)
     Astar.nzval .= 0.0
 
     # Loop over columns of
-    @Threads.threads for m in 0:shot.M
+    Threads.@threads for m in 0:shot.M
         tid = Threads.threadid()
         define_Acol!(Astar, m, shot, Fis[tid], dFis[tid], Fos[tid], Ps[tid])
     end
@@ -271,7 +271,7 @@ function define_Acol!(Astar, m, shot, Fi, dFi, Fo, P)
 
 end
 
-function define_B!(B, shot, Fi::AbstractVector{<:Complex}, Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan)
+function define_B!(B, shot, Fis, Fos, Ps)
     N = shot.N
     M = shot.M
 
@@ -285,7 +285,8 @@ function define_B!(B, shot, Fi::AbstractVector{<:Complex}, Fo::AbstractVector{<:
     rhs(x, t) = RHS(shot, x, t, invR, invR2)
 
     # Loop over columns of
-    for j in 1:N
+    Threads.@threads for j in 1:N
+
         je = 2j
         jo = je - 1
         # element row
@@ -294,8 +295,9 @@ function define_B!(B, shot, Fi::AbstractVector{<:Complex}, Fo::AbstractVector{<:
         Jos = Jo .+ mrange
         Jes = Je .+ mrange
 
-        @views θFD_ρIP_f_nu!(B[Jos], rhs, :odd, j, M, Fi, Fo, P, shot.Q)
-        @views θFD_ρIP_f_nu!(B[Jes], rhs, :even, j, M, Fi, Fo, P, shot.Q)
+        tid = Threads.threadid()
+        @views θFD_ρIP_f_nu!(B[Jos], rhs, :odd, j, M, Fis[tid], Fos[tid], Ps[tid], shot.Q)
+        @views θFD_ρIP_f_nu!(B[Jes], rhs, :even, j, M, Fis[tid], Fos[tid], Ps[tid], shot.Q)
 
     end
     return

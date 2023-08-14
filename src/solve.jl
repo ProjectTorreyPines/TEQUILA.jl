@@ -28,7 +28,7 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0,
             scale_Ip!(refill; I_c)
         end
         define_Astar!(A, refill, Fis, dFis, Fos, Ps)
-        define_B!(B, refill, Fis[1], Fos[1], Ps[1])
+        define_B!(B, refill, Fis, Fos, Ps)
         set_bc!(refill, A, B)
 
         C = A \ B

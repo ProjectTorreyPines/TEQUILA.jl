@@ -17,6 +17,7 @@ using PreallocationTools
 using JuMP
 import NLopt
 import BSON
+using LinearSolve
 
 const halfpi = 0.5 * π
 const twopi = 2π

@@ -22,6 +22,7 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0,
     warn_concentric = false
     _, _, Ψold = find_axis(refill)
 
+    local linsolve
     for i in 1:its
         debug && println("ITERATION $i")
         if refill.Ip_target !== nothing
@@ -31,7 +32,16 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0,
         define_B!(B, refill, Fis, Fos, Ps)
         set_bc!(refill, A, B)
 
-        C = A \ B
+        if i == 1
+            prob = LinearProblem(A, B)
+            linsolve = LinearSolve.init(prob)
+        else
+            linsolve.A = A
+            linsolve.b = B
+        end
+        sol = LinearSolve.solve!(linsolve)
+        C = sol.u
+
         if i == 1
             refill.C .= transpose(reshape(C, (2*refill.M + 1, 2*refill.N)))
         else

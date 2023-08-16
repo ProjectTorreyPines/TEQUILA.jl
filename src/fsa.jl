@@ -13,6 +13,30 @@ function trapa(f::F1; min_level=3, max_level=20, tol::Real=eps(typeof(1.0))) whe
     return int
 end
 
+function Jf_J(x, J, f)
+    j = J(x)
+    return @SVector[j * f(x), j]
+end
+
+function fsa_trapa(J::F1, f::F2; min_level=3, max_level=20, tol::Real=eps(typeof(1.0))) where {F1, F2}
+    j = J(0.0)
+    int_Jf = twopi * j * f(0.0)
+    int_J  = twopi * j
+    for l in 1:max_level
+        dx = twopi / 2^l
+        X = range(0, twopi, 2^l + 1)[2:2:end]
+        int2_Jf, int2_J = dx .* sum(x -> Jf_J(x, J, f), X)
+        int_Jf = 0.5 * int_Jf + int2_Jf
+        int_J  = 0.5 * int_J  + int2_J
+        if l >= min_level
+            abs(int_Jf <= tol) && break
+            (abs(int2_Jf / int_Jf - 0.5) <= tol) && (abs(int2_J / int_J - 0.5) <= tol) && break
+        end
+    end
+
+    return int_Jf / int_J
+end
+
 function Vprime(shot::F1, ρ::Real; tid = Threads.threadid()) where {F1<:Shot}
     k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
     R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
@@ -51,8 +75,7 @@ function FSA(f::F1, shot::F2, ρ::Real; tid = Threads.threadid()) where {F1, F2<
     dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
 
     J  = θ -> MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx)
-    Jf = θ -> f(θ) * J(θ)
-    return trapa(Jf) / trapa(J)
+    return fsa_trapa(J, f)
 end
 
 function FSA(f::F1, shot::F2, ρ::Real, Vprime::F3; tid = Threads.threadid()) where {F1, F2<:Shot, F3<:FE_rep}

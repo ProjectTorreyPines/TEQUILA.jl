@@ -25,9 +25,8 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0,
     local linsolve
     for i in 1:its
         debug && println("ITERATION $i")
-        if refill.Ip_target !== nothing
-            scale_Ip!(refill; I_c)
-        end
+        refill.Ip_target !== nothing && scale_Ip!(refill; I_c)
+
         define_Astar!(A, refill, Fis, dFis, Fos, Ps)
         define_B!(B, refill, Fis, Fos, Ps)
         set_bc!(refill, A, B)
@@ -71,7 +70,7 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0,
             break
         end
 
-        I_c = Ip(refill)
+        refill.Ip_target !== nothing && (I_c = Ip(refill))
     end
     warn_concentric && println("WARNING: Final iteration used concentric surfaces and is likely inaccurate")
     return refill

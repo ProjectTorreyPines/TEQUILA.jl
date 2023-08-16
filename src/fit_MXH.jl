@@ -14,7 +14,7 @@ end
 
 function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real, ρaxis::Real; algorithm::Symbol=:LD_SLSQP)
 
-    model = Model(NLopt.Optimizer)
+    model = Model(NLopt.Optimizer; add_bridges=false)
     set_optimizer_attribute(model, "algorithm", algorithm)
     set_optimizer_attribute(model, "maxtime", 10.0)
     @variable(model, ρ)
@@ -139,7 +139,7 @@ function find_extrema_RZ(shot, level::Real, Raxis::Real, Zaxis::Real)
     Zb_min = Z0 - b
     Zb_max = Z0 + b
 
-    model = Model(NLopt.Optimizer)
+    model = Model(NLopt.Optimizer; add_bridges=false)
     set_optimizer_attribute(model, "algorithm", :LN_COBYLA)
     set_optimizer_attribute(model, "maxtime", 10.0)
     @variable(model, R)

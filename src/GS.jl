@@ -271,7 +271,7 @@ function define_Acol!(Astar, m, shot, Fi, dFi, Fo, P)
 
 end
 
-function define_B!(B, shot, Fis, Fos, Ps)
+function define_B!(B, shot, Fis::Vector{<:AbstractVector{<:Complex}}, Fos::Vector{<:AbstractVector{<:Complex}}, Ps::Vector{<:FFTW.FFTWPlan})
     N = shot.N
     M = shot.M
 
@@ -282,7 +282,7 @@ function define_B!(B, shot, Fis, Fos, Ps)
     invR2 = (shot.F_dF_dψ === nothing) ? FE_fsa(shot, fsa_invR2) : nothing
     invR  = (shot.Jt !==nothing) ? FE_fsa(shot, fsa_invR) : nothing
 
-    rhs(x, t) = RHS(shot, x, t, invR, invR2)
+    rhs(x, t) = RHS(shot, x, t, invR, invR2, shot.Q)
 
     # Loop over columns of
     Threads.@threads for j in 1:N
@@ -303,7 +303,7 @@ function define_B!(B, shot, Fis, Fos, Ps)
     return
 end
 
-function RHS(shot::Shot, ρ::Real, θ::Real, invR, invR2)
+function RHS(shot::Shot, ρ::Real, θ::Real, invR, invR2, Q::QuadInfo)
     (shot.P === nothing && shot.dP_dψ === nothing) &&  throw(ErrorException("Must specify one of the following: P, dP_dψ"))
     if shot.F_dF_dψ === nothing && shot.Jt_R === nothing && shot.Jt === nothing
         throw(ErrorException("Must specify one of the following: F_dF_dψ, Jt_R"))
@@ -318,15 +318,15 @@ function RHS(shot::Shot, ρ::Real, θ::Real, invR, invR2)
 
     if shot.F_dF_dψ !== nothing
         ffprim = shot.F_dF_dψ(ρ)
-        return RHS_pp_ffp(shot, ρ, θ, pprime, ffprim)
+        return RHS_pp_ffp(shot, ρ, θ, pprime, ffprim, Q)
     else
         JtoR = (shot.Jt_R !== nothing) ? shot.Jt_R(ρ) : shot.Jt(ρ) * invR(ρ)
         iR2 = invR2(ρ)
-        return RHS_pp_jt(shot, ρ, θ, pprime, JtoR, iR2)
+        return RHS_pp_jt(shot, ρ, θ, pprime, JtoR, iR2, Q)
     end
 end
 
-function RHS_pp_ffp(shot::Shot, ρ::Real, θ::Real, dP_dψ::Real, F_dF_dψ::Real; tid = Threads.threadid())
+function RHS_pp_ffp(shot::Shot, ρ::Real, θ::Real, dP_dψ::Real, F_dF_dψ::Real, Q::QuadInfo; tid = Threads.threadid())
     k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
     R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
@@ -343,8 +343,8 @@ function RHS_pp_ffp(shot::Shot, ρ::Real, θ::Real, dP_dψ::Real, F_dF_dψ::Real
     dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
 
-    J = MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx)
-    R = MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, cx, sx, ax)
+    J = MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx, Q.Fsin, Q.Fcos)
+    R = MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, cx, sx, ax, Q.Fsin, Q.Fcos)
 
     pterm  =  μ₀ * dP_dψ * J
     ffterm = F_dF_dψ * J / R^2

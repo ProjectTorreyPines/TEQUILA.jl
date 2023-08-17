@@ -352,7 +352,7 @@ function RHS_pp_ffp(shot::Shot, ρ::Real, θ::Real, dP_dψ::Real, F_dF_dψ::Real
     return -twopi^2 * (pterm + ffterm)
 end
 
-function RHS_pp_jt(shot::Shot, ρ::Real, θ::Real, dP_dψ::Real, JtoR::Real, iR2:: Real; tid = Threads.threadid())
+function RHS_pp_jt(shot::Shot, ρ::Real, θ::Real, dP_dψ::Real, JtoR::Real, iR2:: Real, Q::QuadInfo; tid = Threads.threadid())
     k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
     R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
@@ -368,7 +368,7 @@ function RHS_pp_jt(shot::Shot, ρ::Real, θ::Real, dP_dψ::Real, JtoR::Real, iR2
     dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
-    J = MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx)
+    J = MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx, Q.Fsin, Q.Fcos)
     R = MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, cx, sx, ax)
 
     pterm  = -twopi * (1.0 - 1.0 / (R^2 * iR2)) * dP_dψ * J

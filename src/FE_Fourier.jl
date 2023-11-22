@@ -60,6 +60,7 @@ function dual_fourier_decompose!(CS::AbstractVector{<:Real}, f, M::Integer,
                                  reset_CS = false)
     reset_CS && (CS .= 0.0)
     invM2 = 1.0 / (M + 2)
+    M1 = M + 1
 
     @assert length(θs) == length(Fi) == length(dFi) # this syntax works!
     @inbounds for (k, θ) in enumerate(θs)
@@ -68,14 +69,14 @@ function dual_fourier_decompose!(CS::AbstractVector{<:Real}, f, M::Integer,
 
     mul!(Fo, P, Fi)
     Fo[1] *= 0.5
-    @assert length(Fo) >= M + 1
-    @views @inbounds CS[1:2:end] .+=  real.(Fo[1:(M+1)]) .* invM2
-    @views @inbounds CS[2:2:end] .+= .-imag.(Fo[2:(M+1)]) .* invM2 # fft sign convention
+    @assert length(Fo) >= M1
+    @views @inbounds CS[1:2:end] .+= real.(Fo[1:M1]) .* invM2
+    @views @inbounds CS[2:2:end] .-= imag.(Fo[2:M1]) .* invM2 # fft sign convention
 
     mul!(Fo, P, dFi)
     m_M2 = range(0, M * invM2, M+1)
-    @views @inbounds CS[1:2:end] .+= m_M2 .* imag.(Fo[1:(M+1)])
-    @views @inbounds CS[2:2:end] .+= m_M2[2:end] .* real.(Fo[2:(M+1)])
+    @views @inbounds CS[1:2:end] .+= m_M2 .* imag.(Fo[1:M1])
+    @views @inbounds CS[2:2:end] .+= m_M2[2:end] .* real.(Fo[2:M1])
 
     return CS
 end
@@ -116,23 +117,19 @@ end
 
 function int_cos(j::Int, l::Int, ncmt, msmt, ν1, D_ν1, ν2, D_ν2, Q::QuadInfo)
     grr, grt, gtt, nu1, D_nu1, nu2, D_nu2 = int_setup(j, l, ν1, D_ν1, ν2, D_ν2, Q)
-    f = ncmt * grr
-    g = msmt * grt
-    df = ncmt * grt
-    dg = msmt * gtt
-    I1 = D_nu1 * (f * D_nu2 + g * nu2)
-    I2 = nu1 * (df * D_nu2 + dg * nu2)
+    f = ncmt * D_nu2
+    g = msmt * nu2
+    I1 = D_nu1 * (f * grr + g * grt)
+    I2 = nu1   * (f * grt + g * gtt)
     return SVector(I1, I2)
 end
 
 function int_sin(j::Int, l::Int, nsmt, nmcmt, ν1, D_ν1, ν2, D_ν2, Q::QuadInfo)
     grr, grt, gtt, nu1, D_nu1, nu2, D_nu2 = int_setup(j, l, ν1, D_ν1, ν2, D_ν2, Q)
-    f = nsmt * grr
-    g = nmcmt * grt
-    df = nsmt * grt
-    dg = nmcmt * gtt
-    I1 = D_nu1 * (f * D_nu2 + g * nu2)
-    I2 = nu1 * (df * D_nu2 + dg * nu2)
+    f = nsmt * D_nu2
+    g = nmcmt * nu2
+    I1 = D_nu1 * (f * grr  + g * grt)
+    I2 = nu1   * (f * grt  + g * gtt)
     return SVector(I1, I2)
 end
 

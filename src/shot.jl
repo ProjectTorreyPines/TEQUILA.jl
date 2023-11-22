@@ -440,8 +440,8 @@ function dpsi_dθ(shot::Shot, ρ, θ, bases = compute_bases(shot.ρ, ρ))
 end
 
 function ∇psi(shot::Shot, ρ, θ, bases_Dbases = compute_both_bases(shot.ρ, ρ))
-    bases   = bases_Dbases[1:5]
-    D_bases = bases_Dbases[[1,6,7,8,9]]
+    @views bases   = bases_Dbases[1:5]
+    @views D_bases = bases_Dbases[1], bases_Dbases[6:9]...
     return dpsi_dρ(shot, ρ, θ, D_bases), dpsi_dθ(shot, ρ, θ, bases)
 end
 

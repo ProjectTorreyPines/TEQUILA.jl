@@ -82,7 +82,7 @@ function surfaces_FE(ρ:: AbstractVector{<:Real}, surfaces:: AbstractVector{<:MX
     return R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe
 end
 
-function surfaces_FE(ρ:: AbstractVector{<:Real}, surfaces:: AbstractMatrix{<:Real} )
+function surfaces_FE(ρ:: AbstractVector{<:Real}, surfaces:: AbstractMatrix{<:Real}, flat_δ2::Nothing=nothing, flat_δ3::Nothing=nothing)
 
     rtype = typeof(ρ[1])
 
@@ -103,6 +103,47 @@ function surfaces_FE(ρ:: AbstractVector{<:Real}, surfaces:: AbstractMatrix{<:Re
 
     return R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe
 end
+
+function surfaces_FE(ρ:: AbstractVector{<:Real}, surfaces:: AbstractMatrix{<:Real}, flat_δ2::AbstractVector{<:Real}, flat_δ3::AbstractVector{<:Real})
+
+    R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe = surfaces_FE(ρ, surfaces)
+
+    ρ1 = ρ[end-1]
+    ρ4 = ρ[end]
+    δρ = ρ4 - ρ1
+
+    ρ2 = ρ1 + δ_frac_2 * δρ
+    ρ3 = ρ1 + δ_frac_3 * δρ
+    _, nu_ou2, nu_eu2, nu_ol2, nu_el2 = compute_bases(ρ, ρ2)
+    _, nu_ou3, nu_eu3, nu_ol3, nu_el3 = compute_bases(ρ, ρ3)
+    nus = (nu_ou2, nu_eu2, nu_ol2, nu_el2, nu_ou3, nu_eu3, nu_ol3, nu_el3)
+
+    update_edge_derivatives!(R0fe, flat_δ2[1], flat_δ3[1], nus...)
+    update_edge_derivatives!(Z0fe, flat_δ2[2], flat_δ3[2], nus...)
+    update_edge_derivatives!(ϵfe,  flat_δ2[3], flat_δ3[3], nus...)
+    update_edge_derivatives!(κfe,  flat_δ2[4], flat_δ3[4], nus...)
+    update_edge_derivatives!(c0fe, flat_δ2[5], flat_δ3[5], nus...)
+    M = length(cfe)
+    for m in eachindex(cfe)
+        update_edge_derivatives!(cfe[m], flat_δ2[5+m],   flat_δ3[5+m],   nus...)
+        update_edge_derivatives!(sfe[m], flat_δ2[5+m+M], flat_δ3[5+m+M], nus...)
+    end
+
+    return R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe
+end
+
+function update_edge_derivatives!(Yfe, Y2, Y3, nu_ou2, nu_eu2, nu_ol2, nu_el2, nu_ou3, nu_eu3, nu_ol3, nu_el3)
+
+    # deterimant of |nu_ou2   nu_ol2|
+    #               |nu_ou3   nu_ol3|
+    D = nu_ou2 * nu_ol3 - nu_ou3 * nu_ol2
+    b2 = Y2 - Yfe.coeffs[end-2] * nu_eu2 - Yfe.coeffs[end] * nu_el2
+    b3 = Y3 - Yfe.coeffs[end-2] * nu_eu3 - Yfe.coeffs[end] * nu_el3
+    Yfe.coeffs[end-3] = (b2 * nu_ol3 - b3 * nu_ol2) / D
+    Yfe.coeffs[end-1] = (nu_ou2 * b3 - nu_ou3 * b2) / D
+end
+
+
 
 function θ_at_RZ(shot::Shot, ρ::Real, R::Real, Z::Real; tid::Int = Threads.threadid())
     R0x, Z0x, ϵx, κx, c0x, cx, sx = compute_MXH(shot, ρ; tid)

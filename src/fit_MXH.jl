@@ -323,8 +323,9 @@ function fit_MXH!(flat, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fi, Fo, P)
 
 end
 
-function update_shot!(shot::Shot, surfaces, Ψaxis)
-    shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe, shot.cfe, shot.sfe = surfaces_FE(shot.ρ, surfaces)
+function update_shot!(shot::Shot, surfaces, Ψaxis, flat_δ2=nothing, flat_δ3=nothing)
+    shot.surfaces .= surfaces
+    shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe, shot.cfe, shot.sfe = surfaces_FE(shot.ρ, surfaces, flat_δ2, flat_δ3)
     shot.C .= 0.0
     shot.C[2:2:end, 1] .= Ψaxis .* (1.0 .- shot.ρ.^2)
     shot.C[1:2:end, 1] .= -2.0 .* Ψaxis .* shot.ρ
@@ -335,10 +336,10 @@ end
 
 function refit!(shot::Shot, Ψaxis::Real, Raxis::Real, Zaxis::Real; debug::Bool=false, fit_fallback::Bool=true,)
     # Using ρ = rho poloidal (sqrt((Ψ-Ψaxis)/sqrt(Ψbnd-Ψaxis)))
-    local surfaces
+    local surfaces, flat_δ2, flat_δ3
     warn_concentric = false
     try
-        surfaces = fitted_surfaces(shot, Ψaxis, Raxis, Zaxis)
+        surfaces, flat_δ2, flat_δ3 = fitted_surfaces(shot, Ψaxis, Raxis, Zaxis)
     catch err
        (isa(err, InterruptException) || !fit_fallback) && rethrow(err)
        warn_concentric = true
@@ -346,8 +347,10 @@ function refit!(shot::Shot, Ψaxis::Real, Raxis::Real, Zaxis::Real; debug::Bool=
            println("    Warning: Fit fell back to concentric surfaces due to ", typeof(err))
        end
        surfaces = concentric_surfaces(shot, Raxis, Zaxis)
+       flat_δ2 = nothing
+       flat_δ3 = nothing
     end
-    update_shot!(shot, surfaces, Ψaxis)
+    update_shot!(shot, surfaces, Ψaxis, flat_δ2, flat_δ3)
     return shot, warn_concentric
 end
 
@@ -358,7 +361,9 @@ function fitted_surfaces(shot, Ψaxis, Raxis, Zaxis)
     surfaces = deepcopy(shot.surfaces)
 
     ρaxis, _ = ρθ_RZ(shot, Raxis, Zaxis)
-    Threads.@threads for k in 2:(shot.N - 1)
+    #Threads.@threads
+    # multithreading is broken here somehow. Maybe the tid pattern?
+    for k in 2:(shot.N - 1)
         lvl = Ψaxis * (1.0 - shot.ρ[k] ^ 2)
         tid = Threads.threadid()
         Fi = Fis[tid]
@@ -367,6 +372,21 @@ function fitted_surfaces(shot, Ψaxis, Raxis, Zaxis)
         @views flat = surfaces[:, k]
         fit_MXH!(flat, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fi, Fo, P)
     end
+
+    # Now fit two more surfaces in the last grid region so we can update derivatives
+    tid = Threads.threadid()
+    δρ = shot.ρ[end] - shot.ρ[end-1]
+
+    flat_δ2 = zeros(2L+5)
+    ρ_δ2 = shot.ρ[end-1] + δ_frac_2 * δρ
+    lvl = Ψaxis * (1.0 - ρ_δ2 ^ 2)
+    fit_MXH!(flat_δ2, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fis[tid], Fos[tid], Ps[tid])
+
+    flat_δ3  = zeros(2L+5)
+    ρ_δ3  = shot.ρ[end-1] + δ_frac_3 * δρ
+    lvl = Ψaxis * (1.0 - ρ_δ3 ^ 2)
+    fit_MXH!(flat_δ3, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fis[tid], Fos[tid], Ps[tid])
+
 
     # Extrapolate or set to zero on-axis
     ρ2 = shot.ρ[2]
@@ -378,7 +398,7 @@ function fitted_surfaces(shot, Ψaxis, Raxis, Zaxis)
     surfaces[4, 1] = h .* (surfaces[4, 2] .* ρ3 .- surfaces[4, 3] .* ρ2)
     surfaces[5, 1] = h .* (surfaces[5, 2] .* ρ3 .- surfaces[5, 3] .* ρ2)
     @views surfaces[6:end, 1] .= 0.0
-    return surfaces
+    return surfaces, flat_δ2, flat_δ3
 end
 
 

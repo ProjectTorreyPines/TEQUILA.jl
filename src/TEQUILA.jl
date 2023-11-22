@@ -28,6 +28,10 @@ const x0_2 = zeros(2)
 const jump_success = @SVector[JuMP.OPTIMAL, JuMP.LOCALLY_SOLVED]
 const int_order = 5
 
+# used in surfaces_FE for update_edge_derivatives!, as well as in fitted_surfaces
+const δ_frac_2 = 0.5
+const δ_frac_3 = 0.75
+
 mutable struct QuadInfo{VR1<:AbstractVector{<:Real}, VSV1<:Vector{<:AbstractSparseVector},
                         MR1<:AbstractMatrix{<:Real}, VR2<:AbstractVector{<:Real},
                         MR2<:AbstractMatrix{<:Real}, MR3<:AbstractMatrix{<:Real}}

@@ -22,16 +22,16 @@ function QuadInfo(ρ::AbstractVector, M::Int, MXH_modes::Int; order::Int=int_ord
     ϵ = similar(xq)
     κ = similar(xq)
     c0 = similar(xq)
-    c = zeros(MXH_modes, Nq)
-    s = zeros(MXH_modes, Nq)
+    c = zeros(eltype(ρ), MXH_modes, Nq)
+    s = zeros(eltype(ρ), MXH_modes, Nq)
 
     dR0 = similar(xq)
     dZ0 = similar(xq)
     dϵ = similar(xq)
     dκ = similar(xq)
     dc0 = similar(xq)
-    dc = zeros(MXH_modes, Nq)
-    ds = zeros(MXH_modes, Nq)
+    dc = zeros(eltype(ρ), MXH_modes, Nq)
+    ds = zeros(eltype(ρ), MXH_modes, Nq)
 
     # θ only
     θ = range(0, twopi, 2M + 5)[1:end-1]
@@ -46,7 +46,7 @@ function QuadInfo(ρ::AbstractVector, M::Int, MXH_modes::Int; order::Int=int_ord
     end
 
     # ρ and θ
-    gρρ = zeros(Nρ, Mθ)
+    gρρ = zeros(eltype(ρ), Nρ, Mθ)
     gρθ = similar(gρρ)
     gθθ = similar(gρρ)
 

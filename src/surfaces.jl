@@ -94,12 +94,13 @@ function surfaces_FE(ρ:: AbstractVector{<:Real}, surfaces:: AbstractMatrix{<:Re
 
     M = (size(surfaces,1) - 5) ÷ 2
 
-    cfe = Vector{typeof(R0fe)}(undef, M)
-    sfe = Vector{typeof(R0fe)}(undef, M)
-    for m in 1:M
-        @views cfe[m] = FE(ρ, rtype.(surfaces[5 + m, :]))
-        @views sfe[m] = FE(ρ, rtype.(surfaces[5 + m + M, :]))
-    end
+    temp = convert.(Vector{rtype}, getindex.((surfaces,), 6:(M+5), :)) # rows 5 + 1:M in surfaces
+    # Broadcast over result of 2nd argument to FE
+    cfe = FE.((ρ,), temp)
+
+    temp2 = convert.(Vector{rtype}, getindex.((surfaces,), (6+M):(2M+5), :)) # rows M + 5 + 1:M in surfaces
+    # Broadcast over result of 2nd argument to FE
+    sfe = FE.((ρ,), temp2)
 
     return R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe
 end
@@ -165,8 +166,8 @@ function evaluate_csx!(cxs, sxs, cfe, sfe, k::Integer, nu_ou, nu_eu, nu_ol, nu_e
 end
 
 function evaluate_csx(cfe, sfe, k::Integer, nu_ou, nu_eu, nu_ol, nu_el)
-    cx = [evaluate_inbounds(c, k, nu_ou, nu_eu, nu_ol, nu_el) for c in cfe]
-    sx = [evaluate_inbounds(s, k, nu_ou, nu_eu, nu_ol, nu_el) for s in sfe]
+    cx = convert(Vector{typeof(nu_ou)}, [evaluate_inbounds(c, k, nu_ou, nu_eu, nu_ol, nu_el) for c in cfe])
+    sx = convert(Vector{typeof(nu_ou)}, [evaluate_inbounds(s, k, nu_ou, nu_eu, nu_ol, nu_el) for s in sfe])
     return cx, sx
 end
 
@@ -185,8 +186,8 @@ function evaluate_dcsx!(dcxs, dsxs, cfe, sfe, k::Integer, D_nu_ou, D_nu_eu, D_nu
 end
 
 function evaluate_dcsx(cfe, sfe, k::Integer, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dcx = [evaluate_inbounds(c, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el) for c in cfe]
-    dsx = [evaluate_inbounds(s, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el) for s in sfe]
+    dcx = convert(Vector{typeof(D_nu_ou)}, [evaluate_inbounds(c, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el) for c in cfe])
+    dsx = convert(Vector{typeof(D_nu_ou)}, [evaluate_inbounds(s, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el) for s in sfe])
     return dcx, dsx
 end
 

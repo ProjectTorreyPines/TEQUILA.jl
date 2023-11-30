@@ -353,7 +353,7 @@ end
 
 function fitted_surfaces(shot, Ψaxis, Raxis, Zaxis)
     L = length(shot.cfe)
-    Fis, _, Fos, Ps = fft_prealloc_threaded(L)
+    Fis, _, Fos, Ps = fft_prealloc_threaded(L, eltype(shot.ρ))
 
     surfaces = deepcopy(shot.surfaces)
 

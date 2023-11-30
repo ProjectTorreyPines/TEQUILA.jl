@@ -13,12 +13,24 @@ function fft_prealloc(M::Integer)
     return Fi, dFi, Fo, P
 end
 
-function fft_prealloc_threaded(M::Integer)
+function fft_prealloc_threaded(M::Integer, type)
+    #=
+    # TODO: May use this function in the future for Autodiff
+    if type != Float64 # Assume ForwardDiff.Dual
+        tmp = zeros(type, 2M+4)
+        Fis  = [tmp for _ in 1:Threads.nthreads()]
+        dFis = [tmp for _ in 1:Threads.nthreads()]
+        Fos  = [tmp for _ in 1:Threads.nthreads()]
+        #Ps   = [convert.((type,), plan_fft(zeros(2M+4))) for _ in 1:Threads.nthreads()]
+        Ps   = [plan_fft(zeros(2M+4)) for _ in 1:Threads.nthreads()]
+    else
+    =#
     tmp = zeros(2M+4)
     Fis  = [complex(tmp) for _ in 1:Threads.nthreads()]
     dFis = [complex(tmp) for _ in 1:Threads.nthreads()]
     Fos  = [complex(tmp) for _ in 1:Threads.nthreads()]
     Ps   = [plan_fft(complex(tmp))  for _ in 1:Threads.nthreads()]
+    #end
     return Fis, dFis, Fos, Ps
 end
 
@@ -47,16 +59,18 @@ function fourier_decompose!(CS::AbstractVector{<:Real}, f::F1, M::Integer, Fi::A
     return CS
 end
 
+# Fi, dFi, and Fo are generally Complex, but sometimes Dual
 function dual_fourier_decompose!(CS::AbstractVector{<:Real}, f, M::Integer,
-                                 Fi::AbstractVector{<:Complex}, dFi::AbstractVector{<:Complex},
-                                 Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan, Q::QuadInfo;
+                                 Fi::AbstractVector{<:Number}, dFi::AbstractVector{<:Number},
+                                 Fo::AbstractVector{<:Number}, P::FFTW.FFTWPlan, Q::QuadInfo;
                                  reset_CS = false)
     return dual_fourier_decompose!(CS, f, M, Fi, dFi, Fo, P, Q.θ; reset_CS)
 end
 
+# Fi, dFi, and Fo are generally Complex, but sometimes Dual
 function dual_fourier_decompose!(CS::AbstractVector{<:Real}, f, M::Integer,
-                                 Fi::AbstractVector{<:Complex}, dFi::AbstractVector{<:Complex},
-                                 Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan, θs::AbstractVector{<:Real};
+                                 Fi::AbstractVector{<:Number}, dFi::AbstractVector{<:Number},
+                                 Fo::AbstractVector{<:Number}, P::FFTW.FFTWPlan, θs::AbstractVector{<:Real};
                                  reset_CS = false)
     reset_CS && (CS .= 0.0)
     invM2 = 1.0 / (M + 2)
@@ -66,6 +80,7 @@ function dual_fourier_decompose!(CS::AbstractVector{<:Real}, f, M::Integer,
         Fi[k], dFi[k] = f(θ)
     end
 
+    # TODO: Need FFTW autodiff
     mul!(Fo, P, Fi)
     Fo[1] *= 0.5
     @assert length(Fo) >= M + 1

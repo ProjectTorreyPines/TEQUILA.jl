@@ -1,5 +1,6 @@
 function compute_Cmatrix(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, Ψ::F1, Q::QuadInfo) where {F1}
-    return compute_Cmatrix(N, M, ρ, Ψ, Q, factorize(mass_matrix(N, ρ)))
+    ρ_val = ForwardDiff.value.(ρ)
+    return compute_Cmatrix(N, M, ρ, Ψ, Q, factorize(mass_matrix(N, ρ_val)))
 end
 
 function compute_Cmatrix(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, Ψ::F1, Q::QuadInfo, Afac::Factorization) where {F1}
@@ -81,6 +82,17 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ;
     return Shot(N, M, ρ, surfaces, C, S_FE..., Q; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
+function make_surfaces(boundary::MXH, ρ; Raxis::Real = boundary.R0, Zaxis::Real = boundary.Z0)
+    Stmp = deepcopy(boundary)
+    hcat(TEQUILA.make_surface.((Stmp,), (ρ,), eachindex(ρ), (boundary,), (Raxis,), (Zaxis,))...)
+end
+
+function make_surface(Stmp::MXH, ρ, k, boundary::MXH, Raxis::Real, Zaxis::Real)
+    concentric_surface!(Stmp, ρ[k], boundary; Raxis, Zaxis)
+    flat_coeffs(Stmp)
+end
+
+# NOTE: Depends on type information of `boundary` for surfaces
 function Shot(N :: Integer, M :: Integer, boundary :: MXH;
              Raxis::Real = boundary.R0, Zaxis::Real = boundary.Z0,
              P::ProfType=nothing, dP_dψ::ProfType=nothing,
@@ -88,20 +100,16 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH;
              Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing,
              approximate_psi::Bool=false)
 
-    ρ = range(0, 1, N)
+    ρ = range(zero(boundary.R0), one(boundary.R0), N)
 
     L = length(boundary.c)
-    surfaces = zeros(5 + 2L, N)
-    Stmp = deepcopy(boundary)
-    for k in eachindex(ρ)
-        concentric_surface!(Stmp, ρ[k], boundary; Raxis, Zaxis)
-        @views flat_coeffs!(surfaces[:, k], Stmp)
-    end
+    surfaces = make_surfaces(boundary, ρ; Raxis, Zaxis)
+    @assert size(surfaces) == (5 + 2L, N)
 
     S_FE = surfaces_FE(ρ, surfaces)
     Q = QuadInfo(ρ, M, L, S_FE...)
 
-    C = zeros(2N, 2M+1)
+    C = zeros(eltype(ρ), 2N, 2M+1)
 
     shot = Shot(N, M, ρ, surfaces, C, S_FE..., Q; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 
@@ -149,7 +157,7 @@ function Shot(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, surfaces::Abst
               P::ProfType=nothing, dP_dψ::ProfType=nothing,
               F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
               Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing)
-    Afac = factorize(mass_matrix(N, ρ))
+    Afac = factorize(mass_matrix(N, ForwardDiff.value.(ρ)))
     return Shot(N, M, ρ, surfaces, C, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, Q, Afac;
                 P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
@@ -265,8 +273,7 @@ function find_axis(Ψ, R0::Real, Z0::Real)
     psign = sign(Ψ(R0, Z0))
     f(x) = -psign * Ψ(x[1], x[2])
 
-    x0_2[1] = R0
-    x0_2[2] = Z0
+    x0_2 = [R0, Z0]
     S = Optim.optimize(f, x0_2, Optim.NelderMead())
     Raxis, Zaxis = Optim.minimizer(S)
     Ψaxis = -psign * Optim.minimum(S)

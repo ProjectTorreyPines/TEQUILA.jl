@@ -23,4 +23,4 @@ SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [compat]
-QuadGK = "<2.9.2"
+QuadGK = "<2.9.2, 2"

@@ -182,8 +182,14 @@ end
 
 function ρθ_RZ(shot, R, Z)
     f = x -> Δ(shot, x, R, Z)
-    ρ = f(1.0) < 0.0 ? 1.0 : Roots.find_zero(f, (0,1), Roots.A42())
+    if f(1.0) >= 0.0
+        ρ = Roots.find_zero(f, (0,1), Roots.A42())
+    else
+        ρ = Roots.find_zero(f, 1.0)
+    end
+    #ρ = f(1.0) < 0.0 ? 1.0 : Roots.find_zero(f, 0.5)#(0,1), Roots.A42())
     θ, _ = (ρ == 0.0) ? (0.0, 0.0)  : θ_at_RZ(shot, ρ, R, Z)
+    #println((ρ, θ))
     return ρ, θ
 end
 
@@ -237,24 +243,26 @@ function compute_MXH(shot::Shot, ρ::Real; tid = Threads.threadid())
 end
 
 function compute_MXH(ρs::AbstractVector{<:Real}, ρ::Real, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, cxs, sxs; tid = Threads.threadid())
-    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(ρs, ρ)
+    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(ρs, (ρ <= 1) ? ρ : 1.0)
     R0x = evaluate_inbounds(R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     Z0x = evaluate_inbounds(Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ϵx = evaluate_inbounds(ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     κx = evaluate_inbounds(κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     c0x = evaluate_inbounds(c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     cx, sx = evaluate_csx!(cxs, sxs, cfe, sfe, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
+    (ρ > 1) &&  (ϵx *= ρ)
     return R0x, Z0x, ϵx, κx, c0x, cx, sx
 end
 
 function compute_MXH(ρs::AbstractVector{<:Real}, ρ::Real, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe)
-    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(ρs, ρ)
+    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(ρs, (ρ <= 1) ? ρ : 1.0)
     R0x = evaluate_inbounds(R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     Z0x = evaluate_inbounds(Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ϵx = evaluate_inbounds(ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     κx = evaluate_inbounds(κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     c0x = evaluate_inbounds(c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     cx, sx = evaluate_csx(cfe, sfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    (ρ > 1) &&  (ϵx *= ρ)
     return R0x, Z0x, ϵx, κx, c0x, cx, sx
 end
 

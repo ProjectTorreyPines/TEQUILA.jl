@@ -223,13 +223,47 @@ function psi_ρθ(shot::Shot, ρ::Real, θ::Real)
     psi = 0.0
 
     k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
-    nus = (nu_ou, nu_eu, nu_ol, nu_el)
+    tk = 2k
+    tkm1 = tk-1
+    tkp1 = tk+1
+    tkp2 = tk+2
 
-    @views psi += dot(shot.C[2k-1:2k+2, 1], nus)
-    @inbounds for m in 1:shot.M
-        @views C = dot(shot.C[2k-1:2k+2, 2m+1], nus)
-        @views S = dot(shot.C[2k-1:2k+2, 2m], nus)
-        psi += dot((S, C), sincos(m * θ))
+    psi += shot.C[tkm1, 1] * nu_ou + shot.C[tk, 1] * nu_eu + shot.C[tkp1, 1] * nu_ol + shot.C[tkp2, 1] * nu_el
+    shot.M == 0 && return psi
+
+    m = 1
+    tm = 2
+    S = shot.C[tkm1, tm] * nu_ou + shot.C[tk, tm] * nu_eu + shot.C[tkp1, tm] * nu_ol + shot.C[tkp2, tm] * nu_el
+    C = shot.C[tkm1, tm+1] * nu_ou + shot.C[tk, tm+1] * nu_eu + shot.C[tkp1, tm+1] * nu_ol + shot.C[tkp2, tm+1] * nu_el
+    s1, c1 = sincos(θ)
+    psi += S * s1 + C * c1
+    shot.M == 1 && return psi
+
+    m = 2
+    tm = 4
+    S = shot.C[tkm1, tm] * nu_ou + shot.C[tk, tm] * nu_eu + shot.C[tkp1, tm] * nu_ol + shot.C[tkp2, tm] * nu_el
+    C = shot.C[tkm1, tm+1] * nu_ou + shot.C[tk, tm+1] * nu_eu + shot.C[tkp1, tm+1] * nu_ol + shot.C[tkp2, tm+1] * nu_el
+    tc1 = 2.0 * c1
+    s2 = tc1 * s1        # sin(2θ)
+    c2 = tc1 * c1 - 1.0  # cos(2θ)
+    psi += S * s2 + C * c2
+    shot.M == 2 && return psi
+
+    # Chebyshev method for recursively computing sin(mθ) and cos(mθ)
+    # https://en.wikipedia.org/wiki/List_of_trigonometric_identities#Chebyshev_method
+    sm_1, cm_1 = s1, c1
+    sm, cm = s2, c2
+    @inbounds for m in 3:shot.M
+        # The m-th Fourier coefficient at this ρ
+        tm = 2m
+        S = shot.C[tkm1, tm] * nu_ou + shot.C[tk, tm] * nu_eu + shot.C[tkp1, tm] * nu_ol + shot.C[tkp2, tm] * nu_el
+        C = shot.C[tkm1, tm+1] * nu_ou + shot.C[tk, tm+1] * nu_eu + shot.C[tkp1, tm+1] * nu_ol + shot.C[tkp2, tm+1] * nu_el
+
+        sm_2, cm_2 = sm_1, cm_1
+        sm_1, cm_1 = sm, cm
+        cm = tc1 * cm_1 - cm_2 # cos(mθ)
+        sm = tc1 * sm_1 - sm_2 # sin(mθ)
+        psi += S * sm + C * cm
     end
     return psi
 end
@@ -250,8 +284,9 @@ function psi_ρθ(shot::Shot, ρ::Real, Fsin::AbstractVector{<:Real}, Fcos::Abst
 end
 
 
-function (shot::Shot)(r, z)
+function (shot::Shot)(r, z; extrapolate::Bool=false)
     ρ, θ = ρθ_RZ(shot, r, z)
+    !extrapolate && (ρ = min(ρ, 1.0))
     return psi_ρθ(shot, ρ, θ)
 end
 
@@ -286,7 +321,7 @@ function ψ(shot::Shot, ρ)
     return ψ₀(shot) * (1.0 - psin)
 end
 
-@recipe function plot_shot(shot::Shot, axes::Symbol=:rz; points=101, contours=true, surfaces=false)
+@recipe function plot_shot(shot::Shot, axes::Symbol=:rz; points=101, contours=true, surfaces=false, extrapolate=false)
 
     if axes == :ρθ
         #aspect_ratio --> true
@@ -322,18 +357,20 @@ end
         xs = range(Rmin, Rmax, points)
         ys = range(Zmin, Zmax, points)
 
-        Ψ = zeros(points, points)
-        for (i,x) in enumerate(xs)
-            for (j,y) in enumerate(ys)
-                r, z = ρθ_RZ(shot, x, y)
-                if r == NaN
-                    Ψ[j,i] = NaN
-                else
-                    Ψ[j,i] = psi_ρθ(shot, r, z)
-                end
-            end
+        Ψ = [shot(x,  y; extrapolate) for y in ys, x in xs]
+
+        pmin, pmax = extrema(Ψ)
+
+
+        if pmin < 0 && pmax > 0
+            cmap = :diverging
+            pext = max(abs(pmin), abs(pmax))
+            clims --> (-pext, pext)
+        elseif pmax > 0
+            cmap = :inferno
+        else
+            cmap = cgrad(:inferno, rev=true)
         end
-        cmap = sum(Ψ) > 0 ? :inferno : cgrad(:inferno, rev=true)
         @series begin
             seriestype --> :heatmap
             c --> cmap
@@ -587,3 +624,5 @@ function MXHEquilibrium.B0Ip_sign(shot::Shot)
 end
 
 MXHEquilibrium.psi_boundary(shot::Shot; kwargs...) = 0.0
+
+MXHEquilibrium.plasma_current(shot::Shot) = Ip(shot)

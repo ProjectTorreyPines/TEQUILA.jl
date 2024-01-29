@@ -180,16 +180,14 @@ function Δ(shot, ρ, R, Z; tid = Threads.threadid())
     return Δ
 end
 
-function ρθ_RZ(shot, R, Z)
+function ρθ_RZ(shot, R, Z; extrapolate::Bool=false)
     f = x -> Δ(shot, x, R, Z)
     if f(1.0) >= 0.0
         ρ = Roots.find_zero(f, (0,1), Roots.A42())
     else
-        ρ = Roots.find_zero(f, 1.0)
+        ρ = extrapolate ? Roots.find_zero(f, 1.0) : 1.0
     end
-    #ρ = f(1.0) < 0.0 ? 1.0 : Roots.find_zero(f, 0.5)#(0,1), Roots.A42())
     θ, _ = (ρ == 0.0) ? (0.0, 0.0)  : θ_at_RZ(shot, ρ, R, Z)
-    #println((ρ, θ))
     return ρ, θ
 end
 

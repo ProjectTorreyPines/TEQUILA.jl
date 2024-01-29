@@ -285,8 +285,7 @@ end
 
 
 function (shot::Shot)(r, z; extrapolate::Bool=false)
-    ρ, θ = ρθ_RZ(shot, r, z)
-    !extrapolate && (ρ = min(ρ, 1.0))
+    ρ, θ = ρθ_RZ(shot, r, z; extrapolate)
     return psi_ρθ(shot, ρ, θ)
 end
 

@@ -1,7 +1,2 @@
 /Manifest.toml
-example/
-sample/
-src_save/
-old/
 *~
-/*.jl

@@ -1,13 +1,15 @@
-function solve(shot::Shot, its::Integer; tol::Real=0.0, relax::Real = 1.0,
+function solve(shot::Shot, its::Integer; tol::Real=0.0, relax::Real = 1.0, profile_grid::Symbol=:poloidal,
                debug::Bool=false, fit_fallback::Bool=true, concentric_first::Bool=true,
                P=nothing, dP_dψ=nothing, F_dF_dψ=nothing, Jt_R=nothing, Jt=nothing,
                Pbnd=shot.Pbnd, Fbnd=shot.Fbnd, Ip_target=shot.Ip_target)
-    refill = Shot(shot; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
-    return solve!(refill, its; tol, relax, debug, fit_fallback, concentric_first)
+    println(Jt(0.75))
+    refill = Shot(shot; profile_grid, P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
+    return solve!(refill, its; tol, relax, profile_grid, debug, fit_fallback, concentric_first, P, dP_dψ, F_dF_dψ, Jt_R, Jt)
 end
 
-function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0,
-                debug::Bool=false, fit_fallback::Bool=true, concentric_first::Bool=true)
+function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0, profile_grid::Symbol=:poloidal,
+                debug::Bool=false, fit_fallback::Bool=true, concentric_first::Bool=true,
+                P=nothing, dP_dψ=nothing, F_dF_dψ=nothing, Jt_R=nothing, Jt=nothing)
 
     # validate current
     I_c = Ip(refill)
@@ -55,6 +57,9 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0,
             refill = refit_concentric!(refill, Ψaxis, Raxis, Zaxis)
         else
             refill, warn_concentric = refit!(refill, Ψaxis, Raxis, Zaxis; debug, fit_fallback)
+        end
+        if profile_grid === :toroidal
+            refill = update_profiles(refill; profile_grid, P, dP_dψ, F_dF_dψ, Jt_R, Jt)
         end
 
         error = abs((Ψaxis-Ψold)/Ψaxis)
@@ -106,7 +111,7 @@ function validate_current(shot; I_c = Ip(shot))
     elseif shot.Jt !== nothing
         good_sign = (sign(shot.Jt(x)) != -sign_Ip for x in shot.ρ)
     else
-        invR2 = FE_fsa(shot, fsa_invR2)
+        invR2 = FE_rep(shot, fsa_invR2)
         Pp = Pprime(shot, shot.P, shot.dP_dψ)
         good_sign = (sign(-(Pp(x) + invR2(x) * shot.F_dF_dψ(x) / μ₀)) != -sign_Ip for x in shot.ρ)
     end

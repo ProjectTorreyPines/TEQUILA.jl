@@ -92,6 +92,11 @@ mutable struct Shot{I1<:Integer, VR1<:AbstractVector{<:Real}, MR1<:AbstractMatri
     cfe :: VFE1
     sfe :: VFE1
     Q :: Q1
+    Vp::FE1
+    invR::FE1
+    invR2::FE1
+    F::FE1
+    ρtor::FE1
     _cx :: VDC1
     _sx :: VDC1
     _dcx :: VDC1

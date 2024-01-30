@@ -143,20 +143,27 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ::FE_rep;
     return Shot(N, M, ρ, surfaces, C, S_FE..., Q; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
-function Shot(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, surfaces::AbstractMatrix{<:Real},
+function Shot(N::Integer, M::Integer, ρ::AbstractVector{T}, surfaces::AbstractMatrix{<:Real},
               C::AbstractMatrix{<:Real}, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep,
               cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep}, Q::QuadInfo;
               P::ProfType=nothing, dP_dψ::ProfType=nothing,
               F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
-              Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing)
-    Afac = factorize(mass_matrix(N, ρ))
-    return Shot(N, M, ρ, surfaces, C, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, Q, Afac;
-                P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
+              Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing) where {T <: Real}
+    Vp    = FE_rep(ρ, Vector{T}(undef, 2N))
+    invR  = FE_rep(ρ, Vector{T}(undef, 2N))
+    invR2 = FE_rep(ρ, Vector{T}(undef, 2N))
+    F  = FE_rep(ρ, Vector{T}(undef, 2N))
+    ρtor  = FE_rep(ρ, Vector{T}(undef, 2N))
+    shot =  Shot(N, M, ρ, surfaces, C, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, Q, Vp, invR, invR2, F, ρtor;
+                 P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
+    set_FSAs!(shot)
+    return shot
 end
 
 function Shot(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, surfaces::AbstractMatrix{<:Real},
               C::AbstractMatrix{<:Real}, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep,
-              cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep}, Q::QuadInfo, Afac::Factorization;
+              cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep}, Q::QuadInfo,
+              Vp::FE_rep, invR::FE_rep, invR2::FE_rep, F::FE_rep, ρtor::FE_rep;
               P::ProfType=nothing, dP_dψ::ProfType=nothing,
               F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
               Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing)
@@ -165,9 +172,11 @@ function Shot(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, surfaces::Abst
     sx  = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
     dcx = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
     dsx = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
-    Shot(N, M, ρ, surfaces, C, P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target,
-         R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, Q, cx, sx, dcx, dsx, Afac)
+    Afac = factorize(mass_matrix(N, ρ))
+    return Shot(N, M, ρ, surfaces, C, P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target,
+                R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, Q, Vp, invR, invR2, F, ρtor, cx, sx, dcx, dsx, Afac)
 end
+
 
 function Shot(N :: Integer, M :: Integer, MXH_modes::Integer, filename::String; fix_Ip::Bool=false)
 
@@ -195,27 +204,75 @@ function Shot(N :: Integer, M :: Integer, MXH_modes::Integer, filename::String; 
     return Shot(N, M, bnd, Ψ; dP_dψ, F_dF_dψ, Pbnd, Fbnd, Ip_target)
 end
 
-function Shot(shot; P::ProfType=nothing, dP_dψ::ProfType=nothing,
-              F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
-              Pbnd::Real=shot.Pbnd, Fbnd::Real=shot.Fbnd, Ip_target::IpType=shot.Ip_target)
+function copy_profile(Y::ProfType, profile_grid::Symbol, ρtor::FE_rep)
+    Y === nothing && return nothing
+    if profile_grid === :poloidal
+        return deepcopy(Y)
+    elseif profile_grid === :toroidal
+        return x -> Y(ρtor(x))
+    end
+end
+
+function get_profiles(shot; profile_grid::Symbol=:poloidal, P::ProfType=nothing, dP_dψ::ProfType=nothing,
+                      F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing)
     Np = (P !== nothing) + (dP_dψ !== nothing)
-    (Np > 1) && throw(ErrorException("Must specify only one of the following: P, dP_dψ"))
     if Np == 0
-        P = deepcopy(shot.P)
-        dP_dψ = deepcopy(shot.dP_dψ)
+        P = copy_profile(shot.P, profile_grid, shot.ρtor)
+        dP_dψ = copy_profile(shot.dP_dψ, profile_grid, shot.ρtor)
+    elseif Np == 1
+        P = copy_profile(P, profile_grid, shot.ρtor)
+        dP_dψ = copy_profile(dP_dψ, profile_grid, shot.ρtor)
+    else
+        throw(ErrorException("Must specify only one of the following: P, dP_dψ"))
     end
 
     Nj = (F_dF_dψ !== nothing) + (Jt_R !== nothing) + (Jt !== nothing)
-    (Nj > 1) && throw(ErrorException("Must specify only one of the following: F_dF_dψ, Jt_R, Jt"))
     if Nj == 0
-        F_dF_dψ = deepcopy(shot.F_dF_dψ)
-        Jt_R = deepcopy(shot.Jt_R)
-        Jt = deepcopy(shot.Jt)
+        F_dF_dψ = copy_profile(shot.F_dF_dψ, profile_grid, shot.ρtor)
+        Jt_R = copy_profile(shot.Jt_R, profile_grid, shot.ρtor)
+        Jt = copy_profile(shot.Jt, profile_grid, shot.ρtor)
+    elseif Nj == 1
+        F_dF_dψ = copy_profile(F_dF_dψ, profile_grid, shot.ρtor)
+        Jt_R = copy_profile(Jt_R, profile_grid, shot.ρtor)
+        Jt = copy_profile(Jt, profile_grid, shot.ρtor)
+    else
+        throw(ErrorException("Must specify only one of the following: F_dF_dψ, Jt_R, Jt"))
     end
+
+    return P, dP_dψ, F_dF_dψ, Jt_R, Jt
+end
+
+function update_profiles(shot; profile_grid::Symbol=:poloidal, P::ProfType=nothing, dP_dψ::ProfType=nothing,
+                          F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing)
+    P, dP_dψ, F_dF_dψ, Jt_R, Jt = get_profiles(shot; profile_grid, P, dP_dψ, F_dF_dψ, Jt_R, Jt)
+    return Shot(shot.N, shot.M, shot.ρ, shot.surfaces, shot.C,
+                shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe,
+                shot.c0fe, shot.cfe, shot.sfe, shot.Q,
+                shot.Vp, shot.invR, shot.invR2, shot.F, shot.ρtor;
+                P, dP_dψ, F_dF_dψ, Jt_R, Jt, shot.Pbnd, shot.Fbnd, shot.Ip_target)
+end
+
+function Shot(shot; profile_grid::Symbol=:poloidal, P::ProfType=nothing, dP_dψ::ProfType=nothing,
+              F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
+              Pbnd::Real=shot.Pbnd, Fbnd::Real=shot.Fbnd, Ip_target::IpType=shot.Ip_target)
+
+    P, dP_dψ, F_dF_dψ, Jt_R, Jt = get_profiles(shot; profile_grid, P, dP_dψ, F_dF_dψ, Jt_R, Jt)
 
     return Shot(shot.N, shot.M, deepcopy(shot.ρ), deepcopy(shot.surfaces), deepcopy(shot.C),
                 deepcopy(shot.R0fe), deepcopy(shot.Z0fe), deepcopy(shot.ϵfe), deepcopy(shot.κfe),
                 deepcopy(shot.c0fe), deepcopy(shot.cfe), deepcopy(shot.sfe), deepcopy(shot.Q);
+                P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
+end
+
+function Shot!(shot; profile_grid::Symbol=:poloidal, P::ProfType=nothing, dP_dψ::ProfType=nothing,
+              F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
+              Pbnd::Real=shot.Pbnd, Fbnd::Real=shot.Fbnd, Ip_target::IpType=shot.Ip_target)
+
+    P, dP_dψ, F_dF_dψ, Jt_R, Jt = get_profiles(shot; profile_grid, P, dP_dψ, F_dF_dψ, Jt_R, Jt)
+
+    return Shot(shot.N, shot.M, shot.ρ, shot.surfaces, shot.C,
+                shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe,
+                shot.c0fe, shot.cfe, shot.sfe, shot.Q;
                 P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
@@ -559,28 +616,25 @@ function FFprime(shot::Shot, F_dF_dψ::Nothing, Jt_R::Nothing, Jt::Nothing)
     throw(ErrorException("Must specify one of the following: F_dF_dψ, Jt_R, Jt"))
 end
 
-FFprime(shot::Shot, F_dF_dψ, Jt_R::Nothing, Jt::Nothing) = F_dF_dψ
+FFprime(shot::Shot, F_dF_dψ, Jt_R::Nothing, Jt::Nothing; invR = nothing, invR2=nothing) = F_dF_dψ
 
-function FFprime(shot::Shot, F_dF_dψ::Nothing, Jt_R, Jt::Nothing)
-    invR2 = FE_fsa(shot, fsa_invR2)
+function FFprime(shot::Shot, F_dF_dψ::Nothing, Jt_R, Jt::Nothing; invR = nothing, invR2 = FE_rep(shot, fsa_invR2))
     Pp = Pprime(shot, shot.P, shot.dP_dψ)
     return x -> -μ₀ * (Pp(x) + Jt_R(x) / twopi) / invR2(x)
 end
 
-function FFprime(shot::Shot, F_dF_dψ::Nothing, Jt_R::Nothing, Jt)
-    invR = FE_fsa(shot, fsa_invR)
-    invR2 = FE_fsa(shot, fsa_invR2)
+function FFprime(shot::Shot, F_dF_dψ::Nothing, Jt_R::Nothing, Jt; invR = FE_rep(shot, fsa_invR), invR2 = FE_rep(shot, fsa_invR2))
     Pp = Pprime(shot, shot.P, shot.dP_dψ)
     return x -> -μ₀ * (Pp(x) + Jt(x) * invR(x) / twopi) / invR2(x)
 end
 
-function Fpol_dFpol_dψ(shot::Shot, ρ::Real)
-    ffp = FFprime(shot, shot.F_dF_dψ, shot.Jt_R, shot.Jt)
+function Fpol_dFpol_dψ(shot::Shot, ρ::Real; kwargs...)
+    ffp = FFprime(shot, shot.F_dF_dψ, shot.Jt_R, shot.Jt; kwargs...)
     return ffp(ρ)
 end
 
-function Fpol(shot::Shot, ρ::Real)
-    return Fpol(shot, FFprime(shot, shot.F_dF_dψ, shot.Jt_R, shot.Jt), ρ)
+function Fpol(shot::Shot, ρ::Real; kwargs...)
+    return Fpol(shot, FFprime(shot, shot.F_dF_dψ, shot.Jt_R, shot.Jt; kwargs...), ρ)
 end
 
 function Fpol(shot::Shot, F_dF_dψ, ρ::Real)

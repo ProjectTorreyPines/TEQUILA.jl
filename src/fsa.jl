@@ -159,9 +159,9 @@ function FiniteElementHermite.FE_rep(shot::F1, f::F2, coeffs = Vector{typeof(sho
         #             going with ForwardDiff
         g = x ->  f(shot, x)
         if x == 0.0
-            coeffs[2i-1] = PreallocationTools.ForwardDiff.derivative(g, 1e-12)
+            coeffs[2i-1] = ForwardDiff.derivative(g, 1e-12)
         else
-            coeffs[2i-1] = PreallocationTools.ForwardDiff.derivative(g, x)
+            coeffs[2i-1] = ForwardDiff.derivative(g, x)
         end
         coeffs[2i] = g(x)
     end
@@ -174,9 +174,9 @@ function FE_coeffs!(Y::FE_rep, shot::F1, f::F2; ε::Real = 1e-6, derivative::Sym
         g = x ->  f(shot, x)
         if derivative === :auto
             if x == 0.0
-                Y.coeffs[2i-1] = PreallocationTools.ForwardDiff.derivative(g, 1e-12)
+                Y.coeffs[2i-1] = ForwardDiff.derivative(g, 1e-12)
             else
-                Y.coeffs[2i-1] = PreallocationTools.ForwardDiff.derivative(g, x)
+                Y.coeffs[2i-1] = ForwardDiff.derivative(g, x)
             end
         else
             xp = x==Y.x[end] ? x : x + ε * (Y.x[i+1] - Y.x[i])

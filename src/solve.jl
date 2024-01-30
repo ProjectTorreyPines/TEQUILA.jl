@@ -1,15 +1,15 @@
-function solve(shot::Shot, its::Integer; tol::Real=0.0, relax::Real = 1.0, profile_grid::Symbol=:poloidal,
+function solve(shot::Shot, its::Integer; tol::Real=0.0, relax::Real = 1.0,
                debug::Bool=false, fit_fallback::Bool=true, concentric_first::Bool=true,
+               profile_grid::Symbol=:poloidal,
                P=nothing, dP_dψ=nothing, F_dF_dψ=nothing, Jt_R=nothing, Jt=nothing,
                Pbnd=shot.Pbnd, Fbnd=shot.Fbnd, Ip_target=shot.Ip_target)
-    println(Jt(0.75))
+
     refill = Shot(shot; profile_grid, P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
-    return solve!(refill, its; tol, relax, profile_grid, debug, fit_fallback, concentric_first, P, dP_dψ, F_dF_dψ, Jt_R, Jt)
+    return solve!(refill, its; tol, relax, debug, fit_fallback, concentric_first)
 end
 
-function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0, profile_grid::Symbol=:poloidal,
-                debug::Bool=false, fit_fallback::Bool=true, concentric_first::Bool=true,
-                P=nothing, dP_dψ=nothing, F_dF_dψ=nothing, Jt_R=nothing, Jt=nothing)
+function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0,
+                debug::Bool=false, fit_fallback::Bool=true, concentric_first::Bool=true)
 
     # validate current
     I_c = Ip(refill)
@@ -27,7 +27,10 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0, prof
     local linsolve
     for i in 1:its
         debug && println("ITERATION $i")
-        refill.Ip_target !== nothing && scale_Ip!(refill; I_c)
+
+        # move to rho_tor grid and scale current, if necessary
+        update_profiles!(refill)
+        scale_Ip!(refill)
 
         define_Astar!(A, refill, Fis, dFis, Fos, Ps)
         define_B!(B, refill, Fis, Fos, Ps)
@@ -58,9 +61,6 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0, prof
         else
             refill, warn_concentric = refit!(refill, Ψaxis, Raxis, Zaxis; debug, fit_fallback)
         end
-        if profile_grid === :toroidal
-            refill = update_profiles(refill; profile_grid, P, dP_dψ, F_dF_dψ, Jt_R, Jt)
-        end
 
         error = abs((Ψaxis-Ψold)/Ψaxis)
         debug && println("    Status: Ψaxis = $Ψaxis, Error: $error")
@@ -75,30 +75,29 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0, prof
             break
         end
 
-        refill.Ip_target !== nothing && (I_c = Ip(refill))
     end
     warn_concentric && println("WARNING: Final iteration used concentric surfaces and is likely inaccurate")
     return refill
 end
 
-function scale_Ip!(shot; I_c = Ip(shot))
+function scale_Ip!(shot::Shot, I_c = Ip(shot))
 
     (shot.Ip_target === nothing) && return
 
     if shot.Jt_R !== nothing
         Jt_R = deepcopy(shot.Jt_R)
-        Jt_R.coeffs  .*= shot.Ip_target / I_c
+        Jt_R.coeffs .*= shot.Ip_target / I_c
         shot.Jt_R = Jt_R
     elseif shot.Jt !== nothing
         Jt = deepcopy(shot.Jt)
-        Jt.coeffs  .*= shot.Ip_target / I_c
+        Jt.coeffs .*= shot.Ip_target / I_c
         shot.Jt = Jt
     else
         ΔI = shot.Ip_target - I_c
         If_c = Ip_ffp(shot)
-        f = 1 + ΔI / If_c
+        fac = 1 + ΔI / If_c
         F_dF_dψ = deepcopy(shot.F_dF_dψ)
-        F_dF_dψ.coeffs  .*= f
+        F_dF_dψ.coeffs .*= fac
         shot.F_dF_dψ = F_dF_dψ
     end
     return

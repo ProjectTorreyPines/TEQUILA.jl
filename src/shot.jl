@@ -20,7 +20,7 @@ function compute_Cmatrix!(C::AbstractMatrix{<:Real}, N :: Integer, M :: Integer,
 end
 
 function Shot(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, surfaces :: AbstractVector{<:MXH}, Ψ;
-              P::ProfType=nothing, dP_dψ::ProfType=nothing,
+              profile_grid::Symbol=:poloidal, P::ProfType=nothing, dP_dψ::ProfType=nothing,
               F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
               Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing, zero_boundary=false)
     @assert length(surfaces) == N
@@ -29,7 +29,7 @@ function Shot(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, surfaces
     for (k, mxh) in enumerate(surfaces)
        @views flat_coeffs!(S[:, k], mxh)
     end
-    Shot(N, M, ρ, S, Ψ; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target, zero_boundary)
+    Shot(N, M, ρ, S, Ψ; profile_grid, P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target, zero_boundary)
 end
 
 function Ψ_ρθ1(x, t, Ψ, S_FE, zero_boundary)
@@ -38,7 +38,7 @@ function Ψ_ρθ1(x, t, Ψ, S_FE, zero_boundary)
 end
 
 function Shot(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, surfaces :: AbstractMatrix{<:Real}, Ψ::F1;
-              P::ProfType=nothing, dP_dψ::ProfType=nothing,
+              profile_grid::Symbol=:poloidal, P::ProfType=nothing, dP_dψ::ProfType=nothing,
               F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
               Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing, zero_boundary=false) where {F1}
     S_FE = surfaces_FE(ρ, surfaces)
@@ -46,11 +46,11 @@ function Shot(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, surfaces
     Q = QuadInfo(ρ, M, MXH_modes, S_FE...)
     Ψ_ρθ = (x, t) -> Ψ_ρθ1(x, t, Ψ, S_FE, zero_boundary)
     C = compute_Cmatrix(N, M, ρ, Ψ_ρθ, Q)
-    return Shot(N, M, ρ, surfaces, C, S_FE..., Q; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
+    return Shot(N, M, ρ, surfaces, C, S_FE..., Q; profile_grid, P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
 function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ;
-              P::ProfType=nothing, dP_dψ::ProfType=nothing,
+              profile_grid::Symbol=:poloidal, P::ProfType=nothing, dP_dψ::ProfType=nothing,
               F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
               Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing, zero_boundary=false)
 
@@ -78,12 +78,12 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ;
 
     C = compute_Cmatrix(N, M, ρ, Ψ_ρθ, Q)
 
-    return Shot(N, M, ρ, surfaces, C, S_FE..., Q; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
+    return Shot(N, M, ρ, surfaces, C, S_FE..., Q; profile_grid, P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
 function Shot(N :: Integer, M :: Integer, boundary :: MXH;
              Raxis::Real = boundary.R0, Zaxis::Real = boundary.Z0,
-             P::ProfType=nothing, dP_dψ::ProfType=nothing,
+             profile_grid::Symbol=:poloidal, P::ProfType=nothing, dP_dψ::ProfType=nothing,
              F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
              Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing,
              approximate_psi::Bool=false)
@@ -103,7 +103,7 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH;
 
     C = zeros(2N, 2M+1)
 
-    shot = Shot(N, M, ρ, surfaces, C, S_FE..., Q; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
+    shot = Shot(N, M, ρ, surfaces, C, S_FE..., Q; profile_grid, P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 
     if approximate_psi
         I0 = (Ip_target !== nothing) ? Ip_target : Ip(shot)
@@ -112,14 +112,14 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH;
         ψ0  = 0.5 * μ₀ * boundary.R0 * I0 / sqrt(0.5 * (1.0 + boundary.κ ^ 2))
         C[2:2:end, 1] .= ψ0 .* ((ρ ./ a) .^ 2 .- 1.0)
         C[1:2:end, 1] .= 2.0 .* ψ0 .* ρ ./ (a .^ 2)
-        shot = Shot(N, M, ρ, surfaces, C, S_FE..., Q; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
+        shot = Shot(N, M, ρ, surfaces, C, S_FE..., Q; profile_grid, P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
     end
 
     return shot
 end
 
 function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ::FE_rep;
-             P::ProfType=nothing, dP_dψ::ProfType=nothing,
+             profile_grid::Symbol=:poloidal, P::ProfType=nothing, dP_dψ::ProfType=nothing,
              F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
              Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing)
 
@@ -140,13 +140,13 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ::FE_rep;
     C[2:2:end, 1] .= Ψ.(ρ)
     C[1:2:end, 1] .= D.(Ref(Ψ), ρ)
 
-    return Shot(N, M, ρ, surfaces, C, S_FE..., Q; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
+    return Shot(N, M, ρ, surfaces, C, S_FE..., Q; profile_grid, P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
 function Shot(N::Integer, M::Integer, ρ::AbstractVector{T}, surfaces::AbstractMatrix{<:Real},
               C::AbstractMatrix{<:Real}, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep,
               cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep}, Q::QuadInfo;
-              P::ProfType=nothing, dP_dψ::ProfType=nothing,
+              profile_grid::Symbol=:poloidal, P::ProfType=nothing, dP_dψ::ProfType=nothing,
               F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
               Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing) where {T <: Real}
     Vp    = FE_rep(ρ, Vector{T}(undef, 2N))
@@ -155,7 +155,7 @@ function Shot(N::Integer, M::Integer, ρ::AbstractVector{T}, surfaces::AbstractM
     F  = FE_rep(ρ, Vector{T}(undef, 2N))
     ρtor  = FE_rep(ρ, Vector{T}(undef, 2N))
     shot =  Shot(N, M, ρ, surfaces, C, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, Q, Vp, invR, invR2, F, ρtor;
-                 P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
+                 profile_grid, P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
     set_FSAs!(shot)
     return shot
 end
@@ -164,7 +164,7 @@ function Shot(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, surfaces::Abst
               C::AbstractMatrix{<:Real}, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep,
               cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep}, Q::QuadInfo,
               Vp::FE_rep, invR::FE_rep, invR2::FE_rep, F::FE_rep, ρtor::FE_rep;
-              P::ProfType=nothing, dP_dψ::ProfType=nothing,
+              profile_grid::Symbol=:poloidal, P::ProfType=nothing, dP_dψ::ProfType=nothing,
               F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
               Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing)
     L = length(cfe)
@@ -173,10 +173,10 @@ function Shot(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, surfaces::Abst
     dcx = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
     dsx = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
     Afac = factorize(mass_matrix(N, ρ))
-    return Shot(N, M, ρ, surfaces, C, P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target,
+    MP = prof -> make_profile(prof, profile_grid, ρtor)
+    return Shot(N, M, ρ, surfaces, C, MP(P), MP(dP_dψ), MP(F_dF_dψ), MP(Jt_R), MP(Jt), Pbnd, Fbnd, Ip_target,
                 R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, Q, Vp, invR, invR2, F, ρtor, cx, sx, dcx, dsx, Afac)
 end
-
 
 function Shot(N :: Integer, M :: Integer, MXH_modes::Integer, filename::String; fix_Ip::Bool=false)
 
@@ -204,75 +204,37 @@ function Shot(N :: Integer, M :: Integer, MXH_modes::Integer, filename::String; 
     return Shot(N, M, bnd, Ψ; dP_dψ, F_dF_dψ, Pbnd, Fbnd, Ip_target)
 end
 
-function copy_profile(Y::ProfType, profile_grid::Symbol, ρtor::FE_rep)
-    Y === nothing && return nothing
-    if profile_grid === :poloidal
-        return deepcopy(Y)
-    elseif profile_grid === :toroidal
-        return x -> Y(ρtor(x))
-    end
-end
+function Shot(shot; profile_grid::Symbol=:poloidal, P::ProfType=nothing, dP_dψ::ProfType=nothing,
+              F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
+              Pbnd::Real=shot.Pbnd, Fbnd::Real=shot.Fbnd, Ip_target::IpType=shot.Ip_target)
 
-function get_profiles(shot; profile_grid::Symbol=:poloidal, P::ProfType=nothing, dP_dψ::ProfType=nothing,
-                      F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing)
     Np = (P !== nothing) + (dP_dψ !== nothing)
     if Np == 0
-        P = copy_profile(shot.P, profile_grid, shot.ρtor)
-        dP_dψ = copy_profile(shot.dP_dψ, profile_grid, shot.ρtor)
+        P = deepcopy(shot.P)
+        dP_dψ = deepcopy(shot.dP_dψ)
     elseif Np == 1
-        P = copy_profile(P, profile_grid, shot.ρtor)
-        dP_dψ = copy_profile(dP_dψ, profile_grid, shot.ρtor)
+        P = make_profile(P, profile_grid, shot.ρtor)
+        dP_dψ = make_profile(dP_dψ, profile_grid, shot.ρtor)
     else
         throw(ErrorException("Must specify only one of the following: P, dP_dψ"))
     end
 
     Nj = (F_dF_dψ !== nothing) + (Jt_R !== nothing) + (Jt !== nothing)
     if Nj == 0
-        F_dF_dψ = copy_profile(shot.F_dF_dψ, profile_grid, shot.ρtor)
-        Jt_R = copy_profile(shot.Jt_R, profile_grid, shot.ρtor)
-        Jt = copy_profile(shot.Jt, profile_grid, shot.ρtor)
+        F_dF_dψ = deepcopy(shot.F_dF_dψ)
+        Jt_R = deepcopy(shot.Jt_R)
+        Jt = deepcopy(shot.Jt)
     elseif Nj == 1
-        F_dF_dψ = copy_profile(F_dF_dψ, profile_grid, shot.ρtor)
-        Jt_R = copy_profile(Jt_R, profile_grid, shot.ρtor)
-        Jt = copy_profile(Jt, profile_grid, shot.ρtor)
+        F_dF_dψ = make_profile(F_dF_dψ, profile_grid, shot.ρtor)
+        Jt_R = make_profile(Jt_R, profile_grid, shot.ρtor)
+        Jt = make_profile(Jt, profile_grid, shot.ρtor)
     else
         throw(ErrorException("Must specify only one of the following: F_dF_dψ, Jt_R, Jt"))
     end
 
-    return P, dP_dψ, F_dF_dψ, Jt_R, Jt
-end
-
-function update_profiles(shot; profile_grid::Symbol=:poloidal, P::ProfType=nothing, dP_dψ::ProfType=nothing,
-                          F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing)
-    P, dP_dψ, F_dF_dψ, Jt_R, Jt = get_profiles(shot; profile_grid, P, dP_dψ, F_dF_dψ, Jt_R, Jt)
-    return Shot(shot.N, shot.M, shot.ρ, shot.surfaces, shot.C,
-                shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe,
-                shot.c0fe, shot.cfe, shot.sfe, shot.Q,
-                shot.Vp, shot.invR, shot.invR2, shot.F, shot.ρtor;
-                P, dP_dψ, F_dF_dψ, Jt_R, Jt, shot.Pbnd, shot.Fbnd, shot.Ip_target)
-end
-
-function Shot(shot; profile_grid::Symbol=:poloidal, P::ProfType=nothing, dP_dψ::ProfType=nothing,
-              F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
-              Pbnd::Real=shot.Pbnd, Fbnd::Real=shot.Fbnd, Ip_target::IpType=shot.Ip_target)
-
-    P, dP_dψ, F_dF_dψ, Jt_R, Jt = get_profiles(shot; profile_grid, P, dP_dψ, F_dF_dψ, Jt_R, Jt)
-
     return Shot(shot.N, shot.M, deepcopy(shot.ρ), deepcopy(shot.surfaces), deepcopy(shot.C),
                 deepcopy(shot.R0fe), deepcopy(shot.Z0fe), deepcopy(shot.ϵfe), deepcopy(shot.κfe),
                 deepcopy(shot.c0fe), deepcopy(shot.cfe), deepcopy(shot.sfe), deepcopy(shot.Q);
-                P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
-end
-
-function Shot!(shot; profile_grid::Symbol=:poloidal, P::ProfType=nothing, dP_dψ::ProfType=nothing,
-              F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
-              Pbnd::Real=shot.Pbnd, Fbnd::Real=shot.Fbnd, Ip_target::IpType=shot.Ip_target)
-
-    P, dP_dψ, F_dF_dψ, Jt_R, Jt = get_profiles(shot; profile_grid, P, dP_dψ, F_dF_dψ, Jt_R, Jt)
-
-    return Shot(shot.N, shot.M, shot.ρ, shot.surfaces, shot.C,
-                shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe,
-                shot.c0fe, shot.cfe, shot.sfe, shot.Q;
                 P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
@@ -590,7 +552,7 @@ function _dp(x, shot)
         dp2 = _dp(2ϵ, shot)
         return 2.0 * dp1 - dp2
     end
-    return D(shot.P, x) /  dψ_dρ(shot, x)
+    return deriv(shot.P, x) /  dψ_dρ(shot, x)
 end
 Pprime(shot::Shot, P, dP_dψ::Nothing) = (x -> _dp(x, shot))
 

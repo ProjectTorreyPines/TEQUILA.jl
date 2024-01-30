@@ -315,7 +315,7 @@ function RHS(shot::Shot, ρ::Real, θ::Real, invR, invR2, Q::QuadInfo)
         pprime = shot.dP_dψ(ρ)
     else
         ψprime = dψ_dρ(shot, ρ)
-        pprime = (ψprime == 0.0) ? 0.0 : D(shot.P, ρ) / ψprime
+        pprime = (ψprime == 0.0) ? 0.0 : deriv(shot.P, ρ) / ψprime
     end
 
     if shot.F_dF_dψ !== nothing

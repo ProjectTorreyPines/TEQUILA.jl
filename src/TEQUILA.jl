@@ -117,6 +117,7 @@ include("initialize.jl")
 export Ψmiller
 
 include("profile.jl")
+export Profile, make_profile
 
 include("shot.jl")
 export Shot, psi_ρθ, plot_shot, find_axis

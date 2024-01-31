@@ -6,13 +6,15 @@ deriv(y::Profile, x) = D(y.fe, x)
 
 make_profile(Y::Nothing, profile_grid::Symbol, ρtor) = nothing
 
-function make_profile(Y::FE_rep, profile_grid::Symbol, ρtor)
+ρtor_default(x::Real) = x
+
+function make_profile(Y::FE_rep, profile_grid::Symbol=:poloidal, ρtor=ρtor_default)
     prof = Profile(deepcopy(Y), deepcopy(Y), profile_grid)
     update_profile!(prof, ρtor)
     return prof
 end
 
-function make_profile(Y::Function, profile_grid::Symbol, ρtor)
+function make_profile(Y::Function, profile_grid::Symbol=:poloidal, ρtor=ρtor_default)
     N = length(ρtor.x) ^ 2 # lots of resolution
     x = range(0, 1, N)
     coeffs = zeros(2N) # this'll get defined in update_profile!
@@ -22,10 +24,7 @@ function make_profile(Y::Function, profile_grid::Symbol, ρtor)
     return prof
 end
 
-function make_profile(prof::Profile, profile_grid::Symbol, ρtor)
-    if prof.grid !== profile_grid
-        @warn "Profile given with grid $(prof.grid), but specified $(profile_grid). Will not update"
-    end
+function make_profile(prof::Profile, profile_grid::Symbol=:poloidal, ρtor=ρtor_default)
     update_profile!(prof, ρtor)
     return prof
 end

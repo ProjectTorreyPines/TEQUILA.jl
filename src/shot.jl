@@ -173,6 +173,14 @@ function Shot(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, surfaces::Abst
     dcx = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
     dsx = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
     Afac = factorize(mass_matrix(N, ρ))
+
+    fine = "This may be fine if pressure and current profiles use different grids."
+    for (name, prof) in (("P", P), ("dP_dψ", dP_dψ), ("F_dF_dψ", F_dF_dψ), ("Jt_R", Jt_R), ("Jt", Jt))
+        if prof isa Profile && prof.grid !== profile_grid
+            @warn name * " is a $(prof.grid) profile, but Shot specifies $(profile_grid). " * fine
+        end
+    end
+
     MP = prof -> make_profile(prof, profile_grid, ρtor)
     return Shot(N, M, ρ, surfaces, C, MP(P), MP(dP_dψ), MP(F_dF_dψ), MP(Jt_R), MP(Jt), Pbnd, Fbnd, Ip_target,
                 R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, Q, Vp, invR, invR2, F, ρtor, cx, sx, dcx, dsx, Afac)
@@ -235,7 +243,7 @@ function Shot(shot; profile_grid::Symbol=:poloidal, P::ProfType=nothing, dP_dψ:
     return Shot(shot.N, shot.M, deepcopy(shot.ρ), deepcopy(shot.surfaces), deepcopy(shot.C),
                 deepcopy(shot.R0fe), deepcopy(shot.Z0fe), deepcopy(shot.ϵfe), deepcopy(shot.κfe),
                 deepcopy(shot.c0fe), deepcopy(shot.cfe), deepcopy(shot.sfe), deepcopy(shot.Q);
-                P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
+                profile_grid, P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
 function psi_ρθ(shot::Shot, ρ::Real, θ::Real)

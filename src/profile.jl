@@ -4,27 +4,29 @@ deriv(y::Function, x) = ForwardDiff.derivative(y, x)
 deriv(y::FE_rep, x) = D(y, x)
 deriv(y::Profile, x) = D(y.fe, x)
 
-make_profile(Y::Nothing, profile_grid::Symbol, ρtor) = nothing
+make_profile(Y::Nothing, ρtor) = nothing
 
 ρtor_default(x::Real) = x
 
-function make_profile(Y::FE_rep, profile_grid::Symbol=:poloidal, ρtor=ρtor_default)
-    prof = Profile(deepcopy(Y), deepcopy(Y), profile_grid)
+function make_profile(Yg::Tuple{<:FE_rep, Symbol}, ρtor=ρtor_default)
+    Y, grid = Yg
+    prof = Profile(deepcopy(Y), deepcopy(Y), grid)
     update_profile!(prof, ρtor)
     return prof
 end
 
-function make_profile(Y::Function, profile_grid::Symbol=:poloidal, ρtor=ρtor_default)
+function make_profile(Yg::Tuple{<:Function, Symbol}, ρtor=ρtor_default)
+    Y, grid = Yg
     N = length(ρtor.x) ^ 2 # lots of resolution
     x = range(0, 1, N)
     coeffs = zeros(2N) # this'll get defined in update_profile!
     fe = FE_rep(x, coeffs)
-    prof = Profile(fe, Y, profile_grid)
+    prof = Profile(fe, Y, grid)
     update_profile!(prof, ρtor; force=true)
     return prof
 end
 
-function make_profile(prof::Profile, profile_grid::Symbol=:poloidal, ρtor=ρtor_default)
+function make_profile(prof::Profile, ρtor=ρtor_default)
     update_profile!(prof, ρtor)
     return prof
 end

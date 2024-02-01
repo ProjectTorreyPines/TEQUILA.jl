@@ -72,7 +72,7 @@ struct Profile{FE1<:FE_rep, PT1<:Union{FE_rep, Function}}
     grid :: Symbol
 end
 
-const ProfType = Union{Nothing, FE_rep, Function, Profile}
+const ProfType = Union{Nothing, Tuple{<:Union{FE_rep, Function}, Symbol}, Profile}
 
 mutable struct Shot{I1<:Integer, VR1<:AbstractVector{<:Real}, MR1<:AbstractMatrix{<:Real}, MR2<:AbstractMatrix{<:Real},
                     PT1<:Union{Nothing, Profile}, PT2<:Union{Nothing, Profile}, PT3<:Union{Nothing, Profile},

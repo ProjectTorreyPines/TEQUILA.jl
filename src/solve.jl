@@ -1,8 +1,9 @@
 function solve(shot::Shot, its::Integer; tol::Real=0.0, relax::Real = 1.0,
                debug::Bool=false, fit_fallback::Bool=true, concentric_first::Bool=true,
-               profile_grid=:poloidal, P=nothing, dP_dψ=nothing, F_dF_dψ=nothing, Jt_R=nothing, Jt=nothing,
+               P::ProfType=nothing, dP_dψ::ProfType=nothing,
+               F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
                Pbnd=shot.Pbnd, Fbnd=shot.Fbnd, Ip_target=shot.Ip_target)
-    refill = Shot(shot; profile_grid, P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
+    refill = Shot(shot; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
     return solve!(refill, its; tol, relax, debug, fit_fallback, concentric_first)
 end
 

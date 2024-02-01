@@ -154,6 +154,9 @@ function Shot(N::Integer, M::Integer, ρ::AbstractVector{T}, surfaces::AbstractM
     invR2 = FE_rep(ρ, Vector{T}(undef, 2N))
     F  = FE_rep(ρ, Vector{T}(undef, 2N))
     ρtor  = FE_rep(ρ, Vector{T}(undef, 2N))
+    # we need an initial ρtor, use ρ
+    ρtor.coeffs[1:2:end] .= 1.0
+    ρtor.coeffs[2:2:end] .= ρ
     shot =  Shot(N, M, ρ, surfaces, C, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, Q, Vp, invR, invR2, F, ρtor;
                  profile_grid, P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
     set_FSAs!(shot)
@@ -173,14 +176,6 @@ function Shot(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, surfaces::Abst
     dcx = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
     dsx = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
     Afac = factorize(mass_matrix(N, ρ))
-
-    fine = "This may be fine if pressure and current profiles use different grids."
-    for (name, prof) in (("P", P), ("dP_dψ", dP_dψ), ("F_dF_dψ", F_dF_dψ), ("Jt_R", Jt_R), ("Jt", Jt))
-        if prof isa Profile && prof.grid !== profile_grid
-            @warn name * " is a $(prof.grid) profile, but Shot specifies $(profile_grid). " * fine
-        end
-    end
-
     MP = prof -> make_profile(prof, profile_grid, ρtor)
     return Shot(N, M, ρ, surfaces, C, MP(P), MP(dP_dψ), MP(F_dF_dψ), MP(Jt_R), MP(Jt), Pbnd, Fbnd, Ip_target,
                 R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, Q, Vp, invR, invR2, F, ρtor, cx, sx, dcx, dsx, Afac)
@@ -560,7 +555,9 @@ function _dp(x, shot)
         dp2 = _dp(2ϵ, shot)
         return 2.0 * dp1 - dp2
     end
-    return deriv(shot.P, x) /  dψ_dρ(shot, x)
+    ψprime = dψ_dρ(shot, x)
+    pprime = (ψprime == 0.0) ? 0.0 : deriv(shot.P, x) /  ψprime
+    return pprime
 end
 Pprime(shot::Shot, P, dP_dψ::Nothing) = (x -> _dp(x, shot))
 

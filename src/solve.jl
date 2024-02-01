@@ -1,15 +1,25 @@
 function solve(shot::Shot, its::Integer; tol::Real=0.0, relax::Real = 1.0,
                debug::Bool=false, fit_fallback::Bool=true, concentric_first::Bool=true,
-               profile_grid::Symbol=:poloidal,
-               P=nothing, dP_dψ=nothing, F_dF_dψ=nothing, Jt_R=nothing, Jt=nothing,
+               profile_grid=:poloidal, P=nothing, dP_dψ=nothing, F_dF_dψ=nothing, Jt_R=nothing, Jt=nothing,
                Pbnd=shot.Pbnd, Fbnd=shot.Fbnd, Ip_target=shot.Ip_target)
-
     refill = Shot(shot; profile_grid, P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
     return solve!(refill, its; tol, relax, debug, fit_fallback, concentric_first)
 end
 
 function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0,
                 debug::Bool=false, fit_fallback::Bool=true, concentric_first::Bool=true)
+
+    if debug
+        pstr = (refill.P !== nothing) ? "P on $(refill.P.grid) grid" : "dP_dψ on $(refill.dP_dψ.grid) grid"
+        if refill.F_dF_dψ !== nothing
+            jstr = "F_dF_dψ on $(refill.F_dF_dψ.grid) grid"
+        elseif refill.Jt_R !== nothing
+            jstr = "Jt_R on $(refill.Jt_R.grid) grid"
+        else
+            jstr = "Jt on $(refill.Jt.grid) grid"
+        end
+        println("*** Solving equilibrium with " * pstr * " and " * jstr * " ***")
+    end
 
     # validate current
     I_c = Ip(refill)
@@ -86,18 +96,18 @@ function scale_Ip!(shot::Shot, I_c = Ip(shot))
 
     if shot.Jt_R !== nothing
         Jt_R = deepcopy(shot.Jt_R)
-        Jt_R.coeffs .*= shot.Ip_target / I_c
+        Jt_R.fe.coeffs .*= shot.Ip_target / I_c
         shot.Jt_R = Jt_R
     elseif shot.Jt !== nothing
         Jt = deepcopy(shot.Jt)
-        Jt.coeffs .*= shot.Ip_target / I_c
+        Jt.fe.coeffs .*= shot.Ip_target / I_c
         shot.Jt = Jt
     else
         ΔI = shot.Ip_target - I_c
         If_c = Ip_ffp(shot)
         fac = 1 + ΔI / If_c
         F_dF_dψ = deepcopy(shot.F_dF_dψ)
-        F_dF_dψ.coeffs .*= fac
+        F_dF_dψ.fe.coeffs .*= fac
         shot.F_dF_dψ = F_dF_dψ
     end
     return

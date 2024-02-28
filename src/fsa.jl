@@ -150,22 +150,124 @@ function fsa_invR(shot::F1, ρ; tid = Threads.threadid()) where {F1<:Shot}
     return FSA(f, shot, ρ)
 end
 
-function FE_fsa(shot::F1, fsa::F2, coeffs = Vector{typeof(shot.ρ[1])}(undef, 2*length(shot.ρ)); ε = 1e-6) where {F1<:Shot, F2}
+function FiniteElementHermite.FE_rep(shot::F1, f::F2, coeffs = Vector{typeof(shot.ρ[1])}(undef, 2*length(shot.ρ)); ε = 1e-6) where {F1<:Shot, F2}
     for (i, x) in enumerate(shot.ρ)
         # BCL 4/26/23: I'd like to use ForwardDiff here, but the use of intermediate arrays
         #              in evaluate_csx!() prevents that
         # BCL 6/2/23: Can use ForwardDiff now but it gives slightly different results,
         #             maybe due to issues at boundary? Don't know what is best but
         #             going with ForwardDiff
-        f = x ->  fsa(shot, x)
+        g = x ->  f(shot, x)
         if x == 0.0
-            coeffs[2i-1] = PreallocationTools.ForwardDiff.derivative(f, 1e-12)
+            coeffs[2i-1] = ForwardDiff.derivative(g, 1e-12)
         else
-            coeffs[2i-1] = PreallocationTools.ForwardDiff.derivative(f, x)
+            coeffs[2i-1] = ForwardDiff.derivative(g, x)
         end
-        coeffs[2i] = f(x)
+        coeffs[2i] = g(x)
     end
     return FE_rep(shot.ρ, coeffs)
+end
+
+function FE_coeffs!(Y::FE_rep, shot::F1, f::F2; ε::Real = 1e-6, derivative::Symbol=:auto) where {F1<:Shot, F2}
+    @assert derivative in (:auto, :finite)
+    for (i, x) in enumerate(Y.x)
+        g = x ->  f(shot, x)
+        if derivative === :auto
+            if x == 0.0
+                Y.coeffs[2i-1] = ForwardDiff.derivative(g, 1e-12)
+            else
+                Y.coeffs[2i-1] = ForwardDiff.derivative(g, x)
+            end
+        else
+            xp = x==Y.x[end] ? x : x + ε * (Y.x[i+1] - Y.x[i])
+            xm = x==Y.x[1]   ? x : x - ε * (Y.x[i] - Y.x[i-1])
+            Y.coeffs[2i-1] = (f(shot, xp) - f(shot, xm)) / (xp - xm)
+        end
+
+        Y.coeffs[2i] = g(x)
+    end
+    return Y
+end
+
+function _int_J_invR2(shot::F1, ρ::Real; tid = Threads.threadid()) where {F1<:Shot}
+    k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
+    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
+    ax = R0x * ϵx
+
+    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
+
+    J_invR2  = θ -> (MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx) *
+                     MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, cx, sx, ax) ^ -2)
+
+    return trapa(J_invR2)
+end
+
+function toroidal_flux(shot::F1, ρ::Real) where {F1<:Shot}
+    invR2 = FE_rep(shot, fsa_invR2)
+    Vp = FE_rep(shot, Vprime)
+    invR = FE_rep(shot, fsa_invR)
+    F = x -> Fpol(shot, x; invR, invR2)
+    return toroidal_flux(ρ, F, Vp, invR2)
+end
+
+function toroidal_flux(ρ::Real, F, Vp, invR2)
+    f = x -> F(x) * Vp(x) * invR2(x)
+    return quadgk(f, 0.0, ρ)[1] / twopi
+end
+
+function toroidal_flux(shot::F1, ρs::AbstractVector{<:Real}) where {F1<:Shot}
+    Φ = zero(ρs)
+    return toroidal_flux!(Φ, shot, ρs)
+end
+
+function toroidal_flux!(Φ::Vector{<:Real}, shot::F1, ρs::AbstractVector{<:Real}) where {F1<:Shot}
+    @assert length(Φ) === length(ρs)
+    invR = FE_rep(shot, fsa_invR)
+    invR2 = FE_rep(shot, fsa_invR2)
+    Vp = FE_rep(shot, Vprime)
+    f = x -> Fpol(shot, x; invR, invR2) * Vp(x) * invR2(x)
+    for k in eachindex(ρs)[2:end]
+        Φ[k] = Φ[k-1] + quadgk(f, ρs[k-1], ρs[k])[1] / twopi
+    end
+    return Φ
+end
+
+function rho_tor_norm(shot::F1, ρ::Real) where{F1<:Shot}
+    Φ = toroidal_flux(ρ, shot.F, shot.Vp, shot.invR2)
+    Φ0 = toroidal_flux(1.0, shot.F, shot.Vp, shot.invR2)
+    return abs(sqrt(Φ / Φ0)) # abs prevents -0.0
+end
+
+function rho_tor_norm(shot::F1) where{F1<:Shot}
+    ρtor = zero(shot.ρ)
+    return rho_tor_norm!(ρtor, shot)
+end
+
+function rho_tor_norm!(ρtor::Vector{<:Real}, shot::F1) where{F1<:Shot}
+    @assert length(ρtor) === length(shot.ρ)
+    toroidal_flux!(ρtor, shot, shot.ρ)
+    @. ρtor = sqrt(ρtor / ρtor[end])
+    ρtor[1] = 0.0
+    ρtor[end] = 1.0
+    return ρtor
+end
+
+function set_FSAs!(shot)
+    FE_coeffs!(shot.Vp, shot, Vprime; derivative=:auto)
+    FE_coeffs!(shot.invR, shot, fsa_invR; derivative=:auto)
+    FE_coeffs!(shot.invR2, shot, fsa_invR2; derivative=:auto)
+    FE_coeffs!(shot.F, shot, (shot, x) -> Fpol(shot, x; shot.invR, shot.invR2); derivative=:finite)
+    FE_coeffs!(shot.ρtor, shot, rho_tor_norm; derivative=:finite)
+    return shot
 end
 
 function Ψ(shot)
@@ -174,31 +276,16 @@ function Ψ(shot)
 end
 
 function Ip(shot::F1; ε::Real = 1e-6) where {F1<:Shot}
-    coeffs = Vector{typeof(shot.ρ[1])}(undef, 2*length(shot.ρ))
-    for (i, x) in enumerate(shot.ρ)
-        # BCL 4/26/23: I'd like to use ForwardDiff here, but the use of intermediate arrays
-        #              in evaluate_csx!() prevents that
-        # BCL 6/2/23: Can use ForwardDiff now but it gives slightly different results,
-        #             maybe due to issues at boundary? Don't know what is best but
-        #             going with ForwardDiff
-        f = x -> Vprime(shot, x)
-        if x == 0.0
-            coeffs[2i-1] = PreallocationTools.ForwardDiff.derivative(f, 1e-12)
-        else
-            coeffs[2i-1] = PreallocationTools.ForwardDiff.derivative(f, x)
-        end
-        coeffs[2i] = f(x)
-    end
-    Vp = FE_rep(shot.ρ, coeffs)
+    Vp = FE_rep(shot, Vprime)
     if shot.Jt_R !== nothing
         f1 = x -> Vp(x) * shot.Jt_R(x)
         return quadgk(f1, 0.0, 1.0)[1] / twopi
     elseif shot.Jt !== nothing
-        invR = FE_fsa(shot, fsa_invR)
+        invR = FE_rep(shot, fsa_invR)
         f2 = x -> Vp(x) * shot.Jt(x) * invR(x)
         return quadgk(f2, 0.0, 1.0)[1] / twopi
     else
-        invR2 = FE_fsa(shot, fsa_invR2)
+        invR2 = FE_rep(shot, fsa_invR2)
         Pp = Pprime(shot, shot.P, shot.dP_dψ)
         f3 = x ->  - Vp(x) * (Pp(x) + invR2(x) * shot.F_dF_dψ(x) / μ₀)
         return quadgk(f3, 0.0, 1.0)[1]
@@ -209,18 +296,8 @@ end
 function Ip_ffp(shot::F1; ε::Real = 1e-6) where {F1<:Shot}
     (shot.F_dF_dψ === nothing) && return 0.0
 
-    coeffs = Vector{typeof(shot.ρ[1])}(undef, 2*length(shot.ρ))
-    for (i, x) in enumerate(shot.ρ)
-        # BCL 4/26/23: I'd like to use ForwardDiff here, but the use of intermediate arrays
-        #              in evaluate_csx!() prevents that
-        xp = x==shot.ρ[end] ? 1.0 : x + ε * (shot.ρ[i+1] - shot.ρ[i])
-        xm = x==shot.ρ[1]   ? 0.0 : x - ε * (shot.ρ[i] - shot.ρ[i-1])
-        coeffs[2i-1] = (Vprime(shot, xp) - Vprime(shot, xm)) / (xp - xm)
-        coeffs[2i] = Vprime(shot, x)
-    end
-    Vp = FE_rep(shot.ρ, coeffs)
-
-    invR2 = FE_fsa(shot, fsa_invR2)
+    Vp = FE_rep(shot, Vprime)
+    invR2 = FE_rep(shot, fsa_invR2)
     f = x -> - Vp(x) * invR2(x) * shot.F_dF_dψ(x) / μ₀
     return quadgk(f, 0.0, 1.0)[1]
 end

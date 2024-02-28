@@ -280,8 +280,8 @@ function define_B!(B, shot, Fis::Vector{<:AbstractVector{<:Complex}}, Fos::Vecto
 
     mrange = 0:2M
 
-    invR2 = (shot.F_dF_dψ === nothing) ? FE_fsa(shot, fsa_invR2) : nothing
-    invR  = (shot.Jt !==nothing) ? FE_fsa(shot, fsa_invR) : nothing
+    invR2 = (shot.F_dF_dψ === nothing) ? FE_rep(shot, fsa_invR2) : nothing
+    invR  = (shot.Jt !==nothing) ? FE_rep(shot, fsa_invR) : nothing
 
     rhs(x, t) = RHS(shot, x, t, invR, invR2, shot.Q)
 
@@ -315,7 +315,7 @@ function RHS(shot::Shot, ρ::Real, θ::Real, invR, invR2, Q::QuadInfo)
         pprime = shot.dP_dψ(ρ)
     else
         ψprime = dψ_dρ(shot, ρ)
-        pprime = (ψprime == 0.0) ? 0.0 : D(shot.P, ρ) / ψprime
+        pprime = (ψprime == 0.0) ? 0.0 : deriv(shot.P, ρ) / ψprime
     end
 
     if shot.F_dF_dψ !== nothing

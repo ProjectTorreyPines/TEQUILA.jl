@@ -18,6 +18,7 @@ using JuMP
 import NLopt
 import BSON
 using LinearSolve
+import ForwardDiff
 
 const halfpi = 0.5 * π
 const twopi = 2π
@@ -63,11 +64,19 @@ mutable struct QuadInfo{VR1<:AbstractVector{<:Real}, VSV1<:Vector{<:AbstractSpar
     gθθ :: MR3
 end
 
-const ProfType = Union{Nothing, FE_rep, Function}
 const IpType = Union{Nothing, Real}
 
+struct Profile{FE1<:FE_rep, PT1<:Union{FE_rep, Function}}
+    fe :: FE1
+    orig :: PT1
+    grid :: Symbol
+end
+
+const ProfType = Union{Nothing, Tuple{<:Union{FE_rep, Function}, Symbol}, Profile}
+
 mutable struct Shot{I1<:Integer, VR1<:AbstractVector{<:Real}, MR1<:AbstractMatrix{<:Real}, MR2<:AbstractMatrix{<:Real},
-                    PT1<:ProfType, PT2<:ProfType, PT3<:ProfType, PT4<:ProfType, PT5<:ProfType,
+                    PT1<:Union{Nothing, Profile}, PT2<:Union{Nothing, Profile}, PT3<:Union{Nothing, Profile},
+                    PT4<:Union{Nothing, Profile}, PT5<:Union{Nothing, Profile},
                     R1<:Real, R2<:Real, IP1<:IpType,
                     FE1<:FE_rep, VFE1<:AbstractVector{<:FE_rep}, Q1<:QuadInfo, VDC1<:Vector{<:DiffCache},
                     F1<:Factorization}  <: AbstractEquilibrium
@@ -92,6 +101,11 @@ mutable struct Shot{I1<:Integer, VR1<:AbstractVector{<:Real}, MR1<:AbstractMatri
     cfe :: VFE1
     sfe :: VFE1
     Q :: Q1
+    Vp::FE1
+    invR::FE1
+    invR2::FE1
+    F::FE1
+    ρtor::FE1
     _cx :: VDC1
     _sx :: VDC1
     _dcx :: VDC1
@@ -101,6 +115,9 @@ end
 
 include("initialize.jl")
 export Ψmiller
+
+include("profile.jl")
+export Profile, make_profile
 
 include("shot.jl")
 export Shot, psi_ρθ, plot_shot, find_axis

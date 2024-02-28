@@ -331,6 +331,7 @@ function update_shot!(shot::Shot, surfaces, Ψaxis, flat_δ2=nothing, flat_δ3=n
     shot.C[1:2:end, 1] .= -2.0 .* Ψaxis .* shot.ρ
     MXH_quadrature!(shot)
     metrics_quadrature!(shot)
+    set_FSAs!(shot)
     return shot
 end
 

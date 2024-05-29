@@ -244,7 +244,7 @@ end
 function rho_tor_norm(shot::F1, ρ::Real) where{F1<:Shot}
     Φ = toroidal_flux(ρ, shot.F, shot.Vp, shot.invR2)
     Φ0 = toroidal_flux(1.0, shot.F, shot.Vp, shot.invR2)
-    return abs(sqrt(Φ / Φ0)) # abs prevents -0.0
+    return sqrt(abs(Φ / Φ0)) # abs prevents -0.0
 end
 
 function rho_tor_norm(shot::F1) where{F1<:Shot}

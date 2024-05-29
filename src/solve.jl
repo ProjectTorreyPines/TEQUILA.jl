@@ -99,10 +99,12 @@ function scale_Ip!(shot::Shot, I_c = Ip(shot))
         Jt_R = deepcopy(shot.Jt_R)
         Jt_R.fe.coeffs .*= shot.Ip_target / I_c
         shot.Jt_R = Jt_R
+
     elseif shot.Jt !== nothing
         Jt = deepcopy(shot.Jt)
         Jt.fe.coeffs .*= shot.Ip_target / I_c
         shot.Jt = Jt
+
     else
         ΔI = shot.Ip_target - I_c
         If_c = Ip_ffp(shot)
@@ -111,23 +113,21 @@ function scale_Ip!(shot::Shot, I_c = Ip(shot))
         F_dF_dψ.fe.coeffs .*= fac
         shot.F_dF_dψ = F_dF_dψ
     end
+
     return
 end
 
 function validate_current(shot; I_c = Ip(shot))
     sign_Ip = sign(I_c)
+    error_text(name, ) = "Provided $name profile produces regions with current opposite to the total current ($(sign_Ip)).\nNot allowed since Ψ becomes nonmonotonic - Please correct input profile"
     if shot.Jt_R !== nothing
-        good_sign = (sign(shot.Jt_R(x)) != -sign_Ip for x in shot.ρ)
+        @assert all(sign(shot.Jt_R(x)) ∈ (sign_Ip, 0.0) for x in shot.ρ) error_text("Jt_R")
     elseif shot.Jt !== nothing
-        good_sign = (sign(shot.Jt(x)) != -sign_Ip for x in shot.ρ)
+        @assert all(sign(shot.Jt(x)) ∈ (sign_Ip, 0.0) for x in shot.ρ) error_text("Jt")
     else
         invR2 = FE_rep(shot, fsa_invR2)
         Pp = Pprime(shot, shot.P, shot.dP_dψ)
-        good_sign = (sign(-(Pp(x) + invR2(x) * shot.F_dF_dψ(x) / μ₀)) != -sign_Ip for x in shot.ρ)
-    end
-    if !all(good_sign)
-        throw(ErrorException("Provided F_dF_dψ, Jt, or Jt_R profile produces regions with current opposite total current\n"*
-                             "       Not allowed since Ψ becomes nonmonotonic - Please correct input profile"))
+        @assert all(sign(-(Pp(x) + invR2(x) * shot.F_dF_dψ(x) / μ₀)) ∈ (sign_Ip, 0.0) for x in shot.ρ) error_text("F_dF_dψ")
     end
     return
 end

@@ -330,6 +330,8 @@ function find_axis(Ψ, R0::Real, Z0::Real)
 end
 
 ψ₀(shot::Shot) = shot.C[2,1]
+
+# The below are only true if ρ is poloidal?
 dψ_dρ(shot::Shot, ρ) = -2.0 * ρ * ψ₀(shot)
 
 function ρ(shot::Shot, psi)
@@ -431,7 +433,7 @@ save_shot(shot::Shot, filename::String="shot.bson") = BSON.bson(filename, Dict(:
 load_shot(filename::String="shot.bson") = BSON.load(filename)[:shot]
 
 # Implement AbstractEquilibrium interface
-# This assume it's converged, so the inner flux surface is the axis
+# This assumes it's converged, so the inner flux surface is the axis
 function MXHEquilibrium.magnetic_axis(shot::Shot)
     @views axis = shot.surfaces[:, 1]
     return axis[1], axis[2]

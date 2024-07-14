@@ -4,8 +4,9 @@
 Decompose f(θ) into a Fourier series with m from 0 to M
 Returns cosine coeffients and sine coefficients as tuple
 """
+
 function fft_prealloc(M::Integer)
-    tmp = zeros(2M+4)
+    tmp = zeros(2M + 4)
     Fi = complex(tmp)
     dFi = complex(tmp)
     Fo = complex(tmp)
@@ -14,50 +15,72 @@ function fft_prealloc(M::Integer)
 end
 
 function fft_prealloc_threaded(M::Integer)
-    tmp = zeros(2M+4)
-    Fis  = [complex(tmp) for _ in 1:Threads.nthreads()]
+    tmp = zeros(2M + 4)
+    Fis = [complex(tmp) for _ in 1:Threads.nthreads()]
     dFis = [complex(tmp) for _ in 1:Threads.nthreads()]
-    Fos  = [complex(tmp) for _ in 1:Threads.nthreads()]
-    Ps   = [plan_fft(complex(tmp))  for _ in 1:Threads.nthreads()]
+    Fos = [complex(tmp) for _ in 1:Threads.nthreads()]
+    Ps = [plan_fft(complex(tmp)) for _ in 1:Threads.nthreads()]
     return Fis, dFis, Fos, Ps
 end
 
-function fourier_decompose!(CS::AbstractVector{<:Real}, f::F1, M::Integer, Fi::AbstractVector{<:Complex},
-                            Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan, Q::QuadInfo;
-                            reset_CS = false, fft_op::Union{Nothing, Symbol}=nothing) where {F1<:Function}
+function fourier_decompose!(
+    CS::AbstractVector{<:Real},
+    f::F1,
+    M::Integer,
+    Fi::AbstractVector{<:Complex},
+    Fo::AbstractVector{<:Complex},
+    P::FFTW.FFTWPlan,
+    Q::QuadInfo;
+    reset_CS=false,
+    fft_op::Union{Nothing,Symbol}=nothing
+) where {F1<:Function}
     return fourier_decompose!(CS, f, M, Fi, Fo, P, Q.θ; reset_CS, fft_op)
 end
 
-function fourier_decompose!(CS::AbstractVector{<:Real}, f::F1, M::Integer, Fi::AbstractVector{<:Complex},
-                            Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan, θs::AbstractVector{<:Real};
-                            reset_CS = false, fft_op::Union{Nothing, Symbol}=nothing) where {F1<:Function}
+function fourier_decompose!(
+    CS::AbstractVector{<:Real},
+    f::F1,
+    M::Integer,
+    Fi::AbstractVector{<:Complex},
+    Fo::AbstractVector{<:Complex},
+    P::FFTW.FFTWPlan,
+    θs::AbstractVector{<:Real};
+    reset_CS=false,
+    fft_op::Union{Nothing,Symbol}=nothing
+) where {F1<:Function}
     invM2 = 1.0 / (M + 2)
     @. Fi = f(θs)
     mul!(Fo, P, Fi)
     reset_CS && (CS .= 0.0)
     if fft_op === :derivative
-        m_M2 = range(0, M * invM2, M+1)
+        m_M2 = range(0, M * invM2, M + 1)
         @views CS[1:2:end] .+= m_M2 .* imag.(Fo[1:(M+1)])
         @views CS[2:2:end] .+= m_M2[2:end] .* real.(Fo[2:(M+1)])
     else
         Fo[1] *= 0.5
-        @views CS[1:2:end] .+=  real.(Fo[1:(M+1)]) .* invM2
+        @views CS[1:2:end] .+= real.(Fo[1:(M+1)]) .* invM2
         @views CS[2:2:end] .+= .-imag.(Fo[2:(M+1)]) .* invM2 # fft sign convention
     end
     return CS
 end
 
-function dual_fourier_decompose!(CS::AbstractVector{<:Real}, f, M::Integer,
-                                 Fi::AbstractVector{<:Complex}, dFi::AbstractVector{<:Complex},
-                                 Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan, Q::QuadInfo;
-                                 reset_CS = false)
+function dual_fourier_decompose!(
+    CS::AbstractVector{<:Real},
+    f,
+    M::Integer,
+    Fi::AbstractVector{<:Complex},
+    dFi::AbstractVector{<:Complex},
+    Fo::AbstractVector{<:Complex},
+    P::FFTW.FFTWPlan,
+    Q::QuadInfo;
+    reset_CS=false
+)
     return dual_fourier_decompose!(CS, f, M, Fi, dFi, Fo, P, Q.θ; reset_CS)
 end
 
-function dual_fourier_decompose!(CS::AbstractVector{<:Real}, f, M::Integer,
-                                 Fi::AbstractVector{<:Complex}, dFi::AbstractVector{<:Complex},
-                                 Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan, θs::AbstractVector{<:Real};
-                                 reset_CS = false)
+function dual_fourier_decompose!(CS::AbstractVector{<:Real}, f, M::Integer, Fi::AbstractVector{<:Complex}, dFi::AbstractVector{<:Complex}, Fo::AbstractVector{<:Complex},
+    P::FFTW.FFTWPlan, θs::AbstractVector{<:Real};
+    reset_CS=false)
     reset_CS && (CS .= 0.0)
     invM2 = 1.0 / (M + 2)
     M1 = M + 1
@@ -74,13 +97,12 @@ function dual_fourier_decompose!(CS::AbstractVector{<:Real}, f, M::Integer,
     @views @inbounds CS[2:2:end] .-= imag.(Fo[2:M1]) .* invM2 # fft sign convention
 
     mul!(Fo, P, dFi)
-    m_M2 = range(0, M * invM2, M+1)
+    m_M2 = range(0, M * invM2, M + 1)
     @views @inbounds CS[1:2:end] .+= m_M2 .* imag.(Fo[1:M1])
     @views @inbounds CS[2:2:end] .+= m_M2[2:end] .* real.(Fo[2:M1])
 
     return CS
 end
-
 
 # At fixed θ, give inner product of f(x,θ) and the basis nu(x,k,ρ)
 
@@ -92,15 +114,15 @@ end
 # Fourier decomposition (all m values) of ρIP_f_nu
 # Doing this for all k and nu will give 2D decomposition of f in to FEs for ρ and Fourier for θ
 
-function θFD_ρIP_f_nu!(CS, f::F1, nu::F2, k, M, Fi, Fo, P, Q=nothing; reset_CS = false, fft_op::Union{Nothing, Symbol}=nothing)  where {F1, F2}
+function θFD_ρIP_f_nu!(CS, f::F1, nu::F2, k, M, Fi, Fo, P, Q=nothing; reset_CS=false, fft_op::Union{Nothing,Symbol}=nothing) where {F1,F2}
     return fourier_decompose!(CS, θ -> ρIP(θ, f, nu, k, Q), M, Fi, Fo, P, Q; reset_CS, fft_op)
 end
 
-function compute_element_cos(CS::AbstractVector{<:Real}, m, nu1_type, k1, nu2_type, k2, M, Fi, dFi, Fo, P, Q=nothing; reset_CS = false)
+function compute_element_cos(CS::AbstractVector{<:Real}, m, nu1_type, k1, nu2_type, k2, M, Fi, dFi, Fo, P, Q=nothing; reset_CS=false)
     return dual_fourier_decompose!(CS, θ -> dual_ρIP_cos(θ, m, nu1_type, k1, nu2_type, k2, Q), M, Fi, dFi, Fo, P, Q; reset_CS)
 end
 
-function compute_element_sin(CS::AbstractVector{<:Real}, m, nu1_type, k1, nu2_type, k2, M, Fi, dFi, Fo, P, Q=nothing; reset_CS = false)
+function compute_element_sin(CS::AbstractVector{<:Real}, m, nu1_type, k1, nu2_type, k2, M, Fi, dFi, Fo, P, Q=nothing; reset_CS=false)
     return dual_fourier_decompose!(CS, θ -> dual_ρIP_sin(θ, m, nu1_type, k1, nu2_type, k2, Q), M, Fi, dFi, Fo, P, Q; reset_CS)
 end
 
@@ -120,7 +142,7 @@ function int_cos(j::Int, l::Int, ncmt, msmt, ν1, D_ν1, ν2, D_ν2, Q::QuadInfo
     f = ncmt * D_nu2
     g = msmt * nu2
     I1 = D_nu1 * (f * grr + g * grt)
-    I2 = nu1   * (f * grt + g * gtt)
+    I2 = nu1 * (f * grt + g * gtt)
     return SVector(I1, I2)
 end
 
@@ -128,18 +150,18 @@ function int_sin(j::Int, l::Int, nsmt, nmcmt, ν1, D_ν1, ν2, D_ν2, Q::QuadInf
     grr, grt, gtt, nu1, D_nu1, nu2, D_nu2 = int_setup(j, l, ν1, D_ν1, ν2, D_ν2, Q)
     f = nsmt * D_nu2
     g = nmcmt * nu2
-    I1 = D_nu1 * (f * grr  + g * grt)
-    I2 = nu1   * (f * grt  + g * gtt)
+    I1 = D_nu1 * (f * grr + g * grt)
+    I2 = nu1 * (f * grt + g * gtt)
     return SVector(I1, I2)
 end
 
 function dual_setup(θ, m::Integer, ν1_type::Symbol, k1, ν2_type::Symbol, k2, Q::QuadInfo)
     D_ν1_type = (ν1_type === :odd) ? :D_odd : :D_even
-    ν1   = get_nu(Q, ν1_type, k1)
+    ν1 = get_nu(Q, ν1_type, k1)
     D_ν1 = get_nu(Q, D_ν1_type, k1)
 
     D_ν2_type = (ν2_type === :odd) ? :D_odd : :D_even
-    ν2   = get_nu(Q, ν2_type, k2)
+    ν2 = get_nu(Q, ν2_type, k2)
     D_ν2 = get_nu(Q, D_ν2_type, k2)
 
     l = MillerExtendedHarmonic.θindex(θ, Q.Fsin)
@@ -157,7 +179,7 @@ function dual_ρIP_cos(θ, m::Integer, ν1_type::Symbol, k1, ν2_type::Symbol, k
     ν1, D_ν1, ν2, D_ν2, l, smt, cmt, jmin, jmax = dual_setup(θ, m, ν1_type, k1, ν2_type, k2, Q)
     ncmt = -cmt
     msmt = m * smt
-    return  sum(j -> Q.w[j] .* int_cos(j, l, ncmt, msmt, ν1, D_ν1, ν2, D_ν2, Q), jmin:jmax)
+    return sum(j -> Q.w[j] .* int_cos(j, l, ncmt, msmt, ν1, D_ν1, ν2, D_ν2, Q), jmin:jmax)
 end
 
 function dual_ρIP_sin(θ, m::Integer, ν1_type::Symbol, k1, ν2_type::Symbol, k2, Q::QuadInfo)

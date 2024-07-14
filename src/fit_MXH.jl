@@ -7,20 +7,19 @@ function valid_extrema(Rmax, Z_at_Rmax, Rmin, Z_at_Rmin, R_at_Zmax, Zmax, R_at_Z
 end
 
 function residual_extrema(shot, lvl, Rmax, Z_at_Rmax, Rmin, Z_at_Rmin, R_at_Zmax, Zmax, R_at_Zmin, Zmin)
-    res =  (shot(Rmax, Z_at_Rmax) - lvl) ^ 2 + (shot(Rmin, Z_at_Rmin) - lvl) ^ 2
-    res += (shot(R_at_Zmax, Zmax) - lvl) ^ 2 + (shot(R_at_Zmin, Zmin) - lvl) ^ 2
+    res = (shot(Rmax, Z_at_Rmax) - lvl)^2 + (shot(Rmin, Z_at_Rmin) - lvl)^2
+    res += (shot(R_at_Zmax, Zmax) - lvl)^2 + (shot(R_at_Zmin, Zmin) - lvl)^2
     return sqrt(res / lvl^2)
 end
 
 function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real, ρaxis::Real; algorithm::Symbol=:LD_SLSQP)
-
     model = Model(NLopt.Optimizer; add_bridges=false)
     set_optimizer_attribute(model, "algorithm", algorithm)
     set_optimizer_attribute(model, "maxtime", 10.0)
     @variable(model, ρ)
     @variable(model, θ)
 
-    register(model, :psi, 2, (r, t) -> psi_ρθ(shot, r, t), autodiff=true)
+    register(model, :psi, 2, (r, t) -> psi_ρθ(shot, r, t); autodiff=true)
     @NLconstraint(model, psi(ρ, θ) == level)
 
     ρguess = sqrt(1 - level / Ψaxis)
@@ -32,8 +31,8 @@ function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real,
 
     Rloc = (r, t) -> TEQUILA.R(shot, r, t)
     Zloc = (r, t) -> TEQUILA.Z(shot, r, t)
-    register(model, :Rloc, 2, Rloc, autodiff=true)
-    register(model, :Zloc, 2, Zloc, autodiff=true)
+    register(model, :Rloc, 2, Rloc; autodiff=true)
+    register(model, :Zloc, 2, Zloc; autodiff=true)
 
     # Zmax
     if ρguess < 2ρaxis
@@ -47,7 +46,7 @@ function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real,
     else
         set_start_value(ρ, ρguess)
         set_lower_bound(θ, -2.5 * π)
-        set_upper_bound(θ,  1.5 * π)
+        set_upper_bound(θ, 1.5 * π)
         set_start_value(θ, -0.5 * π)
     end
     @NLobjective(model, Max, Zloc(ρ, θ))
@@ -68,8 +67,8 @@ function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real,
     else
         set_start_value(ρ, ρguess)
         set_lower_bound(θ, -1.5 * π)
-        set_upper_bound(θ,  2.5 * π)
-        set_start_value(θ,  0.5 * π)
+        set_upper_bound(θ, 2.5 * π)
+        set_start_value(θ, 0.5 * π)
     end
     @NLobjective(model, Min, Zloc(ρ, θ))
     JuMP.optimize!(model)
@@ -128,10 +127,9 @@ function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real,
 end
 
 function find_extrema_RZ(shot, level::Real, Raxis::Real, Zaxis::Real)
-
     R0 = shot.surfaces[1, end]
     Z0 = shot.surfaces[2, end]
-    a =  R0 * shot.surfaces[3, end]
+    a = R0 * shot.surfaces[3, end]
     b = shot.surfaces[4, end] * a
 
     Rb_min = R0 - a
@@ -145,7 +143,7 @@ function find_extrema_RZ(shot, level::Real, Raxis::Real, Zaxis::Real)
     @variable(model, R)
     @variable(model, Z)
 
-    register(model, :psi, 2, (x, y) -> shot(x, y), autodiff=true)
+    register(model, :psi, 2, (x, y) -> shot(x, y); autodiff=true)
     @NLconstraint(model, psi(R, Z) == level)
 
     # Zmax
@@ -224,7 +222,6 @@ function find_r(shot, z, lvl, rmin, rmax)
 end
 
 function compute_thetar!(Fi, θs, shot, lvl, R0, Z0, a, b, Rmax, Z_at_Rmax, Rmin, Z_at_Rmin, R_at_Zmax, R_at_Zmin)
-
     branch = Z_at_Rmax > Z0 ? 1 : 0
     for (k, θ) in enumerate(θs)
         z = Z0 - b * sin(θ)
@@ -268,12 +265,11 @@ function compute_thetar!(Fi, θs, shot, lvl, R0, Z0, a, b, Rmax, Z_at_Rmax, Rmin
         end
         Fi[k] = θr - θ
     end
-
 end
 
 function fit_MXH!(flat, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fi, Fo, P)
 
-    Rmax, Z_at_Rmax, Rmin, Z_at_Rmin, R_at_Zmax, Zmax, R_at_Zmin, Zmin  = find_extrema(shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis; algorithm = :LD_SLSQP)
+    Rmax, Z_at_Rmax, Rmin, Z_at_Rmin, R_at_Zmax, Zmax, R_at_Zmin, Zmin = find_extrema(shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis; algorithm=:LD_SLSQP)
 
     res = residual_extrema(shot, lvl, Rmax, Z_at_Rmax, Rmin, Z_at_Rmin, R_at_Zmax, Zmax, R_at_Zmin, Zmin)
 
@@ -285,7 +281,7 @@ function fit_MXH!(flat, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fi, Fo, P)
             Rmax, Z_at_Rmax = Rmax2, Z_at_Rmax2
         end
         if abs(shot(Rmin2, Z_at_Rmin2) - lvl) < abs(shot(Rmin, Z_at_Rmin) - lvl)
-            Rmin, Z_at_Rmin  = Rmin2, Z_at_Rmin2
+            Rmin, Z_at_Rmin = Rmin2, Z_at_Rmin2
         end
         if abs(shot(R_at_Zmax2, Zmax2) - lvl) < abs(shot(R_at_Zmax, Zmax) - lvl)
             R_at_Zmax, Zmax = R_at_Zmax2, Zmax2
@@ -298,15 +294,15 @@ function fit_MXH!(flat, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fi, Fo, P)
     @assert valid_extrema(Rmax, Z_at_Rmax, Rmin, Z_at_Rmin, R_at_Zmax, Zmax, R_at_Zmin, Zmin)
 
     R0 = 0.5 * (Rmax + Rmin)
-    a  = 0.5 * (Rmax - Rmin)
-    ϵ  = a / R0
+    a = 0.5 * (Rmax - Rmin)
+    ϵ = a / R0
     Z0 = 0.5 * (Zmax + Zmin)
-    b  = 0.5 * (Zmax - Zmin)
-    κ  = b / a
+    b = 0.5 * (Zmax - Zmin)
+    κ = b / a
 
     M = length(shot.cfe)
     invM2 = 1.0 / (M + 2)
-    θs = range(0, twopi, 2M+5)[1:end-1]
+    θs = range(0, twopi, 2M + 5)[1:end-1]
 
     compute_thetar!(Fi, θs, shot, lvl, R0, Z0, a, b, Rmax, Z_at_Rmax, Rmin, Z_at_Rmin, R_at_Zmax, R_at_Zmin)
 
@@ -319,15 +315,15 @@ function fit_MXH!(flat, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fi, Fo, P)
     flat[5] = 0.5 * real(Fo[1]) * invM2
     @views flat[6:(5+M)] .= real.(Fo[2:(M+1)]) .* invM2
     @views flat[(6+M):(5+2M)] .= -imag.(Fo[2:(M+1)]) .* invM2 # fft sign convention
-    return flat
 
+    return flat
 end
 
 function update_shot!(shot::Shot, surfaces, Ψaxis, flat_δ2=nothing, flat_δ3=nothing)
     shot.surfaces .= surfaces
     shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe, shot.cfe, shot.sfe = surfaces_FE(shot.ρ, surfaces, flat_δ2, flat_δ3)
     shot.C .= 0.0
-    shot.C[2:2:end, 1] .= Ψaxis .* (1.0 .- shot.ρ.^2)
+    shot.C[2:2:end, 1] .= Ψaxis .* (1.0 .- shot.ρ .^ 2)
     shot.C[1:2:end, 1] .= -2.0 .* Ψaxis .* shot.ρ
     MXH_quadrature!(shot)
     metrics_quadrature!(shot)
@@ -335,21 +331,21 @@ function update_shot!(shot::Shot, surfaces, Ψaxis, flat_δ2=nothing, flat_δ3=n
     return shot
 end
 
-function refit!(shot::Shot, Ψaxis::Real, Raxis::Real, Zaxis::Real; debug::Bool=false, fit_fallback::Bool=true,)
+function refit!(shot::Shot, Ψaxis::Real, Raxis::Real, Zaxis::Real; debug::Bool=false, fit_fallback::Bool=true)
     # Using ρ = rho poloidal (sqrt((Ψ-Ψaxis)/sqrt(Ψbnd-Ψaxis)))
     local surfaces, flat_δ2, flat_δ3
     warn_concentric = false
     try
         surfaces, flat_δ2, flat_δ3 = fitted_surfaces(shot, Ψaxis, Raxis, Zaxis)
     catch err
-       (isa(err, InterruptException) || !fit_fallback) && rethrow(err)
-       warn_concentric = true
-       if debug
-           println("    Warning: Fit fell back to concentric surfaces due to ", typeof(err))
-       end
-       surfaces = concentric_surfaces(shot, Raxis, Zaxis)
-       flat_δ2 = nothing
-       flat_δ3 = nothing
+        (isa(err, InterruptException) || !fit_fallback) && rethrow(err)
+        warn_concentric = true
+        if debug
+            println("    Warning: Fit fell back to concentric surfaces due to ", typeof(err))
+        end
+        surfaces = concentric_surfaces(shot, Raxis, Zaxis)
+        flat_δ2 = nothing
+        flat_δ3 = nothing
     end
     update_shot!(shot, surfaces, Ψaxis, flat_δ2, flat_δ3)
     return shot, warn_concentric
@@ -364,12 +360,12 @@ function fitted_surfaces(shot, Ψaxis, Raxis, Zaxis)
     ρaxis, _ = ρθ_RZ(shot, Raxis, Zaxis)
     #Threads.@threads
     # multithreading is broken here somehow. Maybe the tid pattern?
-    for k in 2:(shot.N - 1)
-        lvl = Ψaxis * (1.0 - shot.ρ[k] ^ 2)
+    for k in 2:(shot.N-1)
+        lvl = Ψaxis * (1.0 - shot.ρ[k]^2)
         tid = Threads.threadid()
         Fi = Fis[tid]
         Fo = Fos[tid]
-        P  = Ps[tid]
+        P = Ps[tid]
         @views flat = surfaces[:, k]
         fit_MXH!(flat, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fi, Fo, P)
     end
@@ -378,16 +374,15 @@ function fitted_surfaces(shot, Ψaxis, Raxis, Zaxis)
     tid = Threads.threadid()
     δρ = shot.ρ[end] - shot.ρ[end-1]
 
-    flat_δ2 = zeros(2L+5)
+    flat_δ2 = zeros(2L + 5)
     ρ_δ2 = shot.ρ[end-1] + δ_frac_2 * δρ
-    lvl = Ψaxis * (1.0 - ρ_δ2 ^ 2)
+    lvl = Ψaxis * (1.0 - ρ_δ2^2)
     fit_MXH!(flat_δ2, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fis[tid], Fos[tid], Ps[tid])
 
-    flat_δ3  = zeros(2L+5)
-    ρ_δ3  = shot.ρ[end-1] + δ_frac_3 * δρ
-    lvl = Ψaxis * (1.0 - ρ_δ3 ^ 2)
+    flat_δ3 = zeros(2L + 5)
+    ρ_δ3 = shot.ρ[end-1] + δ_frac_3 * δρ
+    lvl = Ψaxis * (1.0 - ρ_δ3^2)
     fit_MXH!(flat_δ3, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fis[tid], Fos[tid], Ps[tid])
-
 
     # Extrapolate or set to zero on-axis
     ρ2 = shot.ρ[2]
@@ -412,7 +407,7 @@ end
 
 function concentric_surfaces(shot::Shot, Raxis::Real, Zaxis::Real)
     surfaces = deepcopy(shot.surfaces)
-    @views boundary = shot.surfaces[:,end]
+    @views boundary = shot.surfaces[:, end]
     for k in eachindex(shot.ρ)
         @views concentric_surface!(surfaces[:, k], shot.ρ[k], boundary; Raxis, Zaxis)
     end

@@ -18,16 +18,16 @@ function Jf_J(x, J, f)
     return @SVector[j * f(x), j]
 end
 
-function fsa_trapa(J::F1, f::F2; min_level=3, max_level=20, tol::Real=eps(typeof(1.0))) where {F1, F2}
+function fsa_trapa(J::F1, f::F2; min_level=3, max_level=20, tol::Real=eps(typeof(1.0))) where {F1,F2}
     j = J(0.0)
     int_Jf = twopi * j * f(0.0)
-    int_J  = twopi * j
+    int_J = twopi * j
     for l in 1:max_level
         dx = twopi / 2^l
         X = range(0, twopi, 2^l + 1)[2:2:end]
         int2_Jf, int2_J = dx .* sum(x -> Jf_J(x, J, f), X)
         int_Jf = 0.5 * int_Jf + int2_Jf
-        int_J  = 0.5 * int_J  + int2_J
+        int_J = 0.5 * int_J + int2_J
         if l >= min_level
             abs(int_Jf <= tol) && break
             (abs(int2_Jf / int_Jf - 0.5) <= tol) && (abs(int2_J / int_J - 0.5) <= tol) && break
@@ -37,7 +37,7 @@ function fsa_trapa(J::F1, f::F2; min_level=3, max_level=20, tol::Real=eps(typeof
     return int_Jf / int_J
 end
 
-function Vprime(shot::F1, ρ::Real; tid = Threads.threadid()) where {F1<:Shot}
+function Vprime(shot::F1, ρ::Real; tid=Threads.threadid()) where {F1<:Shot}
     k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
     R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
@@ -56,8 +56,7 @@ function Vprime(shot::F1, ρ::Real; tid = Threads.threadid()) where {F1<:Shot}
     return twopi * trapa(J)
 end
 
-function FSA(f::F1, shot::F2, ρ::Real; tid = Threads.threadid()) where {F1, F2<:Shot}
-
+function FSA(f::F1, shot::F2, ρ::Real; tid=Threads.threadid()) where {F1,F2<:Shot}
     ρ == 0.0 && return f(0.0)
 
     k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
@@ -74,12 +73,11 @@ function FSA(f::F1, shot::F2, ρ::Real; tid = Threads.threadid()) where {F1, F2<
     dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
 
-    J  = θ -> MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx)
+    J = θ -> MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx)
     return fsa_trapa(J, f)
 end
 
-function FSA(f::F1, shot::F2, ρ::Real, Vprime::F3; tid = Threads.threadid()) where {F1, F2<:Shot, F3<:FE_rep}
-
+function FSA(f::F1, shot::F2, ρ::Real, Vprime::F3; tid=Threads.threadid()) where {F1,F2<:Shot,F3<:FE_rep}
     ρ == 0.0 && return f(0.0)
 
     k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
@@ -102,8 +100,7 @@ function FSA(f::F1, shot::F2, ρ::Real, Vprime::F3; tid = Threads.threadid()) wh
     return twopi * trapa(Jf) / Vp
 end
 
-function FSA(f::F1, shot::F2, ρ::Real, Vprime::Real; tid = Threads.threadid()) where {F1, F2<:Shot}
-
+function FSA(f::F1, shot::F2, ρ::Real, Vprime::Real; tid=Threads.threadid()) where {F1,F2<:Shot}
     ρ == 0.0 && return f(0.0)
 
     k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
@@ -124,7 +121,7 @@ function FSA(f::F1, shot::F2, ρ::Real, Vprime::Real; tid = Threads.threadid()) 
     return twopi * trapa(Jf) / Vprime
 end
 
-function fsa_invR2(shot::F1, ρ; tid = Threads.threadid()) where {F1<:Shot}
+function fsa_invR2(shot::F1, ρ; tid=Threads.threadid()) where {F1<:Shot}
     k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
     R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
@@ -132,12 +129,12 @@ function fsa_invR2(shot::F1, ρ; tid = Threads.threadid()) where {F1<:Shot}
     cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
     ax = R0x * ϵx
 
-    f = θ -> MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, cx, sx, ax) ^ -2
+    f = θ -> MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, cx, sx, ax)^-2
 
     return FSA(f, shot, ρ)
 end
 
-function fsa_invR(shot::F1, ρ; tid = Threads.threadid()) where {F1<:Shot}
+function fsa_invR(shot::F1, ρ; tid=Threads.threadid()) where {F1<:Shot}
     k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
     R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
@@ -145,19 +142,19 @@ function fsa_invR(shot::F1, ρ; tid = Threads.threadid()) where {F1<:Shot}
     cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
     ax = R0x * ϵx
 
-    f = θ -> MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, cx, sx, ax) ^ -1
+    f = θ -> MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, cx, sx, ax)^-1
 
     return FSA(f, shot, ρ)
 end
 
-function FiniteElementHermite.FE_rep(shot::F1, f::F2, coeffs = Vector{typeof(shot.ρ[1])}(undef, 2*length(shot.ρ)); ε = 1e-6) where {F1<:Shot, F2}
+function FiniteElementHermite.FE_rep(shot::F1, f::F2, coeffs=Vector{typeof(shot.ρ[1])}(undef, 2 * length(shot.ρ)); ε=1e-6) where {F1<:Shot,F2}
     for (i, x) in enumerate(shot.ρ)
         # BCL 4/26/23: I'd like to use ForwardDiff here, but the use of intermediate arrays
         #              in evaluate_csx!() prevents that
         # BCL 6/2/23: Can use ForwardDiff now but it gives slightly different results,
         #             maybe due to issues at boundary? Don't know what is best but
         #             going with ForwardDiff
-        g = x ->  f(shot, x)
+        g = x -> f(shot, x)
         if x == 0.0
             coeffs[2i-1] = ForwardDiff.derivative(g, 1e-12)
         else
@@ -168,10 +165,10 @@ function FiniteElementHermite.FE_rep(shot::F1, f::F2, coeffs = Vector{typeof(sho
     return FE_rep(shot.ρ, coeffs)
 end
 
-function FE_coeffs!(Y::FE_rep, shot::F1, f::F2; ε::Real = 1e-6, derivative::Symbol=:auto) where {F1<:Shot, F2}
+function FE_coeffs!(Y::FE_rep, shot::F1, f::F2; ε::Real=1e-6, derivative::Symbol=:auto) where {F1<:Shot,F2}
     @assert derivative in (:auto, :finite)
     for (i, x) in enumerate(Y.x)
-        g = x ->  f(shot, x)
+        g = x -> f(shot, x)
         if derivative === :auto
             if x == 0.0
                 Y.coeffs[2i-1] = ForwardDiff.derivative(g, 1e-12)
@@ -179,8 +176,8 @@ function FE_coeffs!(Y::FE_rep, shot::F1, f::F2; ε::Real = 1e-6, derivative::Sym
                 Y.coeffs[2i-1] = ForwardDiff.derivative(g, x)
             end
         else
-            xp = x==Y.x[end] ? x : x + ε * (Y.x[i+1] - Y.x[i])
-            xm = x==Y.x[1]   ? x : x - ε * (Y.x[i] - Y.x[i-1])
+            xp = x == Y.x[end] ? x : x + ε * (Y.x[i+1] - Y.x[i])
+            xm = x == Y.x[1] ? x : x - ε * (Y.x[i] - Y.x[i-1])
             Y.coeffs[2i-1] = (f(shot, xp) - f(shot, xm)) / (xp - xm)
         end
 
@@ -189,7 +186,7 @@ function FE_coeffs!(Y::FE_rep, shot::F1, f::F2; ε::Real = 1e-6, derivative::Sym
     return Y
 end
 
-function _int_J_invR2(shot::F1, ρ::Real; tid = Threads.threadid()) where {F1<:Shot}
+function _int_J_invR2(shot::F1, ρ::Real; tid=Threads.threadid()) where {F1<:Shot}
     k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
     R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
@@ -205,8 +202,7 @@ function _int_J_invR2(shot::F1, ρ::Real; tid = Threads.threadid()) where {F1<:S
     dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
 
-    J_invR2  = θ -> (MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx) *
-                     MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, cx, sx, ax) ^ -2)
+    J_invR2 = θ -> (MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx) * MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, cx, sx, ax)^-2)
 
     return trapa(J_invR2)
 end
@@ -241,18 +237,18 @@ function toroidal_flux!(Φ::Vector{<:Real}, shot::F1, ρs::AbstractVector{<:Real
     return Φ
 end
 
-function rho_tor_norm(shot::F1, ρ::Real) where{F1<:Shot}
+function rho_tor_norm(shot::F1, ρ::Real) where {F1<:Shot}
     Φ = toroidal_flux(ρ, shot.F, shot.Vp, shot.invR2)
     Φ0 = toroidal_flux(1.0, shot.F, shot.Vp, shot.invR2)
     return sqrt(abs(Φ / Φ0)) # abs prevents -0.0
 end
 
-function rho_tor_norm(shot::F1) where{F1<:Shot}
+function rho_tor_norm(shot::F1) where {F1<:Shot}
     ρtor = zero(shot.ρ)
     return rho_tor_norm!(ρtor, shot)
 end
 
-function rho_tor_norm!(ρtor::Vector{<:Real}, shot::F1) where{F1<:Shot}
+function rho_tor_norm!(ρtor::Vector{<:Real}, shot::F1) where {F1<:Shot}
     @assert length(ρtor) === length(shot.ρ)
     toroidal_flux!(ρtor, shot, shot.ρ)
     @. ρtor = sqrt(ρtor / ρtor[end])
@@ -271,11 +267,11 @@ function set_FSAs!(shot)
 end
 
 function Ψ(shot)
-    @views Psi = FE_rep(shot.ρ, shot.C[:,1])
+    @views Psi = FE_rep(shot.ρ, shot.C[:, 1])
     return Psi
 end
 
-function Ip(shot::F1; ε::Real = 1e-6) where {F1<:Shot}
+function Ip(shot::F1; ε::Real=1e-6) where {F1<:Shot}
     Vp = FE_rep(shot, Vprime)
     if shot.Jt_R !== nothing
         f1 = x -> Vp(x) * shot.Jt_R(x)
@@ -287,17 +283,17 @@ function Ip(shot::F1; ε::Real = 1e-6) where {F1<:Shot}
     else
         invR2 = FE_rep(shot, fsa_invR2)
         Pp = Pprime(shot, shot.P, shot.dP_dψ)
-        f3 = x ->  - Vp(x) * (Pp(x) + invR2(x) * shot.F_dF_dψ(x) / μ₀)
+        f3 = x -> -Vp(x) * (Pp(x) + invR2(x) * shot.F_dF_dψ(x) / μ₀)
         return quadgk(f3, 0.0, 1.0)[1]
     end
     return 0.0
 end
 
-function Ip_ffp(shot::F1; ε::Real = 1e-6) where {F1<:Shot}
+function Ip_ffp(shot::F1; ε::Real=1e-6) where {F1<:Shot}
     (shot.F_dF_dψ === nothing) && return 0.0
 
     Vp = FE_rep(shot, Vprime)
     invR2 = FE_rep(shot, fsa_invR2)
-    f = x -> - Vp(x) * invR2(x) * shot.F_dF_dψ(x) / μ₀
+    f = x -> -Vp(x) * invR2(x) * shot.F_dF_dψ(x) / μ₀
     return quadgk(f, 0.0, 1.0)[1]
 end

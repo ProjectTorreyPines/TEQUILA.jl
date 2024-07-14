@@ -1,4 +1,4 @@
-b2e(shot::Shot, j::Integer; m::Integer = 1) = (2 * shot.M + 1) * (j - 1) + m
+b2e(shot::Shot, j::Integer; m::Integer=1) = (2 * shot.M + 1) * (j - 1) + m
 
 function predefine_block!(X, Y, I, J, M, block)
     start = (block - 1) * (2M + 1)^2 + 1
@@ -41,27 +41,27 @@ function preallocate_Astar(shot)
             # [jo, jo-3] block does not exist
 
             # [je, je-3]
-            Ie = b2e(shot, je-3)
+            Ie = b2e(shot, je - 3)
             predefine_block!(X, Y, Ie, Je, M, block)
             block += 1
 
             # T[jo, jo-2]
-            Io = b2e(shot, jo-2)
+            Io = b2e(shot, jo - 2)
             predefine_block!(X, Y, Io, Jo, M, block)
             block += 1
 
             # T[je, je-2]
-            Ie = b2e(shot, je-2)
+            Ie = b2e(shot, je - 2)
             predefine_block!(X, Y, Ie, Je, M, block)
             block += 1
 
             # T[jo, jo-1]
-            Io = b2e(shot, jo-1)
+            Io = b2e(shot, jo - 1)
             predefine_block!(X, Y, Io, Jo, M, block)
             block += 1
         end
         # T[je, je-1]
-        Ie = b2e(shot, je-1)
+        Ie = b2e(shot, je - 1)
         predefine_block!(X, Y, Ie, Je, M, block)
         block += 1
 
@@ -76,28 +76,28 @@ function preallocate_Astar(shot)
         block += 1
 
         # T[jo, jo+1]
-        Io = b2e(shot, jo+1)
+        Io = b2e(shot, jo + 1)
         predefine_block!(X, Y, Io, Jo, M, block)
         block += 1
 
         if j < N
             # T[je, je+1]
-            Ie = b2e(shot, je+1)
+            Ie = b2e(shot, je + 1)
             predefine_block!(X, Y, Ie, Je, M, block)
             block += 1
 
             # T[jo, jo+2]
-            Io = b2e(shot, jo+2)
+            Io = b2e(shot, jo + 2)
             predefine_block!(X, Y, Io, Jo, M, block)
             block += 1
 
             # T[je, je+2]
-            Ie = b2e(shot, je+2)
+            Ie = b2e(shot, je + 2)
             predefine_block!(X, Y, Ie, Je, M, block)
             block += 1
 
             # T[jo, jo+3]
-            Io = b2e(shot, jo+3)
+            Io = b2e(shot, jo + 3)
             predefine_block!(X, Y, Io, Jo, M, block)
             block += 1
             # T[je, je+3] does not exist
@@ -148,121 +148,121 @@ function define_Acol!(Astar, m, shot, Fi, dFi, Fo, P)
             # [jo, jo-3] does not exist
 
             # [je, je-3]
-            Ie = b2e(shot, je-3)
-            @views compute_element_cos(Astar[Jes, Ie + Mc], m, :even, j, :odd, j-1, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+            Ie = b2e(shot, je - 3)
+            @views compute_element_cos(Astar[Jes, Ie+Mc], m, :even, j, :odd, j - 1, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
             if m != 0
-                @views compute_element_sin(Astar[Jes, Ie + Ms], m, :even, j, :odd, j-1, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+                @views compute_element_sin(Astar[Jes, Ie+Ms], m, :even, j, :odd, j - 1, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
             end
 
             # T[jo, jo-2]
-            Io = b2e(shot, jo-2)
-            @views compute_element_cos(Astar[Jos, Io + Mc], m, :odd, j, :odd, j-1, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+            Io = b2e(shot, jo - 2)
+            @views compute_element_cos(Astar[Jos, Io+Mc], m, :odd, j, :odd, j - 1, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
             if m != 0
-                @views compute_element_sin(Astar[Jos, Io + Ms], m, :odd, j, :odd, j-1, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+                @views compute_element_sin(Astar[Jos, Io+Ms], m, :odd, j, :odd, j - 1, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
             end
 
             # T[je, je-2]
-            Ie = b2e(shot, je-2)
-            @views compute_element_cos(Astar[Jes, Ie + Mc], m, :even, j, :even, j-1, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+            Ie = b2e(shot, je - 2)
+            @views compute_element_cos(Astar[Jes, Ie+Mc], m, :even, j, :even, j - 1, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
             if m != 0
-                @views compute_element_sin(Astar[Jes, Ie + Ms], m, :even, j, :even, j-1, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+                @views compute_element_sin(Astar[Jes, Ie+Ms], m, :even, j, :even, j - 1, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
             end
 
             # T[jo, jo-1]
-            Io = b2e(shot, jo-1)
-            @views compute_element_cos(Astar[Jos, Io + Mc], m, :odd, j, :even, j-1, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+            Io = b2e(shot, jo - 1)
+            @views compute_element_cos(Astar[Jos, Io+Mc], m, :odd, j, :even, j - 1, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
             if m != 0
-                @views compute_element_sin(Astar[Jos, Io + Ms], m, :odd, j, :even, j-1, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+                @views compute_element_sin(Astar[Jos, Io+Ms], m, :odd, j, :even, j - 1, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
             end
         end
         # T[je, je-1]
-        Ie = b2e(shot, je-1)
-        @views compute_element_cos(Astar[Jes, Ie + Mc], m, :even, j, :odd, j, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+        Ie = b2e(shot, je - 1)
+        @views compute_element_cos(Astar[Jes, Ie+Mc], m, :even, j, :odd, j, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
         if m != 0
-            @views compute_element_sin(Astar[Jes, Ie + Ms], m, :even, j, :odd, j, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+            @views compute_element_sin(Astar[Jes, Ie+Ms], m, :even, j, :odd, j, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
         end
 
         # Boundary term [νj gρρ D_νi]_0^1, non-zero for νj even and νi odd
         # sign flipped to account for later reversal
         if j == 1
             # ρ=0
-            @views fourier_decompose!(Astar[Jes, Ie + Mc], θ ->  -cos(m * θ) * gρρ(shot, 0.0, θ), M, Fi, Fo, P, shot.Q)
+            @views fourier_decompose!(Astar[Jes, Ie+Mc], θ -> -cos(m * θ) * gρρ(shot, 0.0, θ), M, Fi, Fo, P, shot.Q)
             if m != 0
-                @views fourier_decompose!(Astar[Jes, Ie + Ms], θ ->  -sin(m * θ) * gρρ(shot, 0.0, θ), M, Fi, Fo, P, shot.Q)
+                @views fourier_decompose!(Astar[Jes, Ie+Ms], θ -> -sin(m * θ) * gρρ(shot, 0.0, θ), M, Fi, Fo, P, shot.Q)
             end
         elseif j == N
             # ρ=1
-            @views fourier_decompose!(Astar[Jes, Ie + Mc], θ -> cos(m * θ) * gρρ(shot, 1.0, θ), M, Fi, Fo, P, shot.Q)
+            @views fourier_decompose!(Astar[Jes, Ie+Mc], θ -> cos(m * θ) * gρρ(shot, 1.0, θ), M, Fi, Fo, P, shot.Q)
             if m != 0
-                @views fourier_decompose!(Astar[Jes, Ie + Ms], θ -> sin(m * θ) * gρρ(shot, 1.0, θ), M, Fi, Fo, P, shot.Q)
+                @views fourier_decompose!(Astar[Jes, Ie+Ms], θ -> sin(m * θ) * gρρ(shot, 1.0, θ), M, Fi, Fo, P, shot.Q)
             end
         end
 
 
         # T[jo, jo]
         Io = Jo
-        @views compute_element_cos(Astar[Jos, Io + Mc], m, :odd, j, :odd, j, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+        @views compute_element_cos(Astar[Jos, Io+Mc], m, :odd, j, :odd, j, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
         if m != 0
-            @views compute_element_sin(Astar[Jos, Io + Ms], m, :odd, j, :odd, j, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+            @views compute_element_sin(Astar[Jos, Io+Ms], m, :odd, j, :odd, j, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
         end
 
         # T[je, je]
         Ie = Je
-        @views compute_element_cos(Astar[Jes, Ie + Mc], m, :even, j, :even, j, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+        @views compute_element_cos(Astar[Jes, Ie+Mc], m, :even, j, :even, j, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
         if m != 0
-            @views compute_element_sin(Astar[Jes, Ie + Ms], m, :even, j, :even, j, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+            @views compute_element_sin(Astar[Jes, Ie+Ms], m, :even, j, :even, j, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
         end
 
         # Boundary term [νj gρt νi]_0^1, non-zero for νj even and νi even
         # sign flipped to account for later reversal
         if j == 1
             # ρ=0
-            @views fourier_decompose!(Astar[Jes, Ie + Mc], θ ->  m * sin(m * θ) * gρθ(shot, 0.0, θ), M, Fi, Fo, P, shot.Q)
+            @views fourier_decompose!(Astar[Jes, Ie+Mc], θ -> m * sin(m * θ) * gρθ(shot, 0.0, θ), M, Fi, Fo, P, shot.Q)
             if m != 0
-                @views fourier_decompose!(Astar[Jes, Ie + Ms], θ ->  -m * cos(m * θ) * gρθ(shot, 0.0, θ), M, Fi, Fo, P, shot.Q)
+                @views fourier_decompose!(Astar[Jes, Ie+Ms], θ -> -m * cos(m * θ) * gρθ(shot, 0.0, θ), M, Fi, Fo, P, shot.Q)
             end
         elseif j == N
             # ρ=1
-            @views fourier_decompose!(Astar[Jes, Ie + Mc], θ -> -m * sin(m * θ) * gρθ(shot, 1.0, θ), M, Fi, Fo, P, shot.Q)
+            @views fourier_decompose!(Astar[Jes, Ie+Mc], θ -> -m * sin(m * θ) * gρθ(shot, 1.0, θ), M, Fi, Fo, P, shot.Q)
             if m != 0
-                @views fourier_decompose!(Astar[Jes, Ie + Ms], θ -> m * cos(m * θ) * gρθ(shot, 1.0, θ), M, Fi, Fo, P, shot.Q)
+                @views fourier_decompose!(Astar[Jes, Ie+Ms], θ -> m * cos(m * θ) * gρθ(shot, 1.0, θ), M, Fi, Fo, P, shot.Q)
             end
         end
 
         # T[jo, jo+1]
-        Io = b2e(shot, jo+1)
-        @views compute_element_cos(Astar[Jos, Io + Mc], m, :odd, j, :even, j, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+        Io = b2e(shot, jo + 1)
+        @views compute_element_cos(Astar[Jos, Io+Mc], m, :odd, j, :even, j, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
         if m != 0
-            @views compute_element_sin(Astar[Jos, Io + Ms], m, :odd, j, :even, j, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+            @views compute_element_sin(Astar[Jos, Io+Ms], m, :odd, j, :even, j, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
         end
 
         if j < length(ρ)
             # T[je, je+1]
-            Ie = b2e(shot, je+1)
-            @views compute_element_cos(Astar[Jes, Ie + Mc], m, :even, j, :odd, j+1, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+            Ie = b2e(shot, je + 1)
+            @views compute_element_cos(Astar[Jes, Ie+Mc], m, :even, j, :odd, j + 1, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
             if m != 0
-                @views compute_element_sin(Astar[Jes, Ie + Ms], m, :even, j, :odd, j+1, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+                @views compute_element_sin(Astar[Jes, Ie+Ms], m, :even, j, :odd, j + 1, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
             end
 
             # T[jo, jo+2]
-            Io = b2e(shot, jo+2)
-            @views compute_element_cos(Astar[Jos, Io + Mc], m, :odd, j, :odd, j+1, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+            Io = b2e(shot, jo + 2)
+            @views compute_element_cos(Astar[Jos, Io+Mc], m, :odd, j, :odd, j + 1, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
             if m != 0
-                @views compute_element_sin(Astar[Jos, Io + Ms], m, :odd, j, :odd, j+1, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+                @views compute_element_sin(Astar[Jos, Io+Ms], m, :odd, j, :odd, j + 1, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
             end
 
             # T[je, je+2]
-            Ie = b2e(shot, je+2)
-            @views compute_element_cos(Astar[Jes, Ie + Mc], m, :even, j, :even, j+1, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+            Ie = b2e(shot, je + 2)
+            @views compute_element_cos(Astar[Jes, Ie+Mc], m, :even, j, :even, j + 1, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
             if m != 0
-                @views compute_element_sin(Astar[Jes, Ie + Ms], m, :even, j, :even, j+1, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+                @views compute_element_sin(Astar[Jes, Ie+Ms], m, :even, j, :even, j + 1, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
             end
 
             # T[jo, jo+3]
-            Io = b2e(shot, jo+3)
-            @views compute_element_cos(Astar[Jos, Io + Mc], m, :odd, j, :even, j+1, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+            Io = b2e(shot, jo + 3)
+            @views compute_element_cos(Astar[Jos, Io+Mc], m, :odd, j, :even, j + 1, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
             if m != 0
-                @views compute_element_sin(Astar[Jos, Io + Ms], m, :odd, j, :even, j+1, M, Fi, dFi, Fo, P, shot.Q; reset_CS = false)
+                @views compute_element_sin(Astar[Jos, Io+Ms], m, :odd, j, :even, j + 1, M, Fi, dFi, Fo, P, shot.Q; reset_CS=false)
             end
 
             # T[je, je+3] does not exist
@@ -281,7 +281,7 @@ function define_B!(B, shot, Fis::Vector{<:AbstractVector{<:Complex}}, Fos::Vecto
     mrange = 0:2M
 
     invR2 = (shot.F_dF_dψ === nothing) ? FE_rep(shot, fsa_invR2) : nothing
-    invR  = (shot.Jt !==nothing) ? FE_rep(shot, fsa_invR) : nothing
+    invR = (shot.Jt !== nothing) ? FE_rep(shot, fsa_invR) : nothing
 
     rhs(x, t) = RHS(shot, x, t, invR, invR2, shot.Q)
 
@@ -306,7 +306,9 @@ function define_B!(B, shot, Fis::Vector{<:AbstractVector{<:Complex}}, Fos::Vecto
 end
 
 function RHS(shot::Shot, ρ::Real, θ::Real, invR, invR2, Q::QuadInfo)
-    (shot.P === nothing && shot.dP_dψ === nothing) &&  throw(ErrorException("Must specify one of the following: P, dP_dψ"))
+    if shot.P === nothing && shot.dP_dψ === nothing
+        throw(ErrorException("Must specify one of the following: P, dP_dψ"))
+    end
     if shot.F_dF_dψ === nothing && shot.Jt_R === nothing && shot.Jt === nothing
         throw(ErrorException("Must specify one of the following: F_dF_dψ, Jt_R"))
     end
@@ -328,7 +330,7 @@ function RHS(shot::Shot, ρ::Real, θ::Real, invR, invR2, Q::QuadInfo)
     end
 end
 
-function RHS_pp_ffp(shot::Shot, ρ::Real, θ::Real, dP_dψ::Real, F_dF_dψ::Real, Q::QuadInfo; tid = Threads.threadid())
+function RHS_pp_ffp(shot::Shot, ρ::Real, θ::Real, dP_dψ::Real, F_dF_dψ::Real, Q::QuadInfo; tid=Threads.threadid())
     k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
     R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
@@ -348,13 +350,13 @@ function RHS_pp_ffp(shot::Shot, ρ::Real, θ::Real, dP_dψ::Real, F_dF_dψ::Real
     J = MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx, Q.Fsin, Q.Fcos)
     R = MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, cx, sx, ax, Q.Fsin, Q.Fcos)
 
-    pterm  =  μ₀ * dP_dψ * J
+    pterm = μ₀ * dP_dψ * J
     ffterm = F_dF_dψ * J / R^2
 
     return -twopi^2 * (pterm + ffterm)
 end
 
-function RHS_pp_jt(shot::Shot, ρ::Real, θ::Real, dP_dψ::Real, JtoR::Real, iR2:: Real, Q::QuadInfo; tid = Threads.threadid())
+function RHS_pp_jt(shot::Shot, ρ::Real, θ::Real, dP_dψ::Real, JtoR::Real, iR2::Real, Q::QuadInfo; tid=Threads.threadid())
     k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
     R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
@@ -373,15 +375,13 @@ function RHS_pp_jt(shot::Shot, ρ::Real, θ::Real, dP_dψ::Real, JtoR::Real, iR2
     J = MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx, Q.Fsin, Q.Fcos)
     R = MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, cx, sx, ax)
 
-    pterm  = -twopi * (1.0 - 1.0 / (R^2 * iR2)) * dP_dψ * J
+    pterm = -twopi * (1.0 - 1.0 / (R^2 * iR2)) * dP_dψ * J
     Jterm = JtoR * J / (R^2 * iR2)
 
     return twopi * μ₀ * (pterm + Jterm)
-
 end
 
 function set_bc!(shot::Shot, Astar::AbstractMatrix{<:Real}, b::AbstractVector{<:Real})
-
     N = shot.N
     M = shot.M
 

@@ -1,15 +1,25 @@
-function solve(shot::Shot, its::Integer; tol::Real=0.0, relax::Real = 1.0,
-               debug::Bool=false, fit_fallback::Bool=true, concentric_first::Bool=true,
-               P::ProfType=nothing, dP_dψ::ProfType=nothing,
-               F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
-               Pbnd=shot.Pbnd, Fbnd=shot.Fbnd, Ip_target=shot.Ip_target)
+function solve(
+    shot::Shot,
+    its::Integer;
+    tol::Real=0.0,
+    relax::Real=1.0,
+    debug::Bool=false,
+    fit_fallback::Bool=true,
+    concentric_first::Bool=true,
+    P::ProfType=nothing,
+    dP_dψ::ProfType=nothing,
+    F_dF_dψ::ProfType=nothing,
+    Jt_R::ProfType=nothing,
+    Jt::ProfType=nothing,
+    Pbnd=shot.Pbnd,
+    Fbnd=shot.Fbnd,
+    Ip_target=shot.Ip_target
+)
     refill = Shot(shot; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
     return solve!(refill, its; tol, relax, debug, fit_fallback, concentric_first)
 end
 
-function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0,
-                debug::Bool=false, fit_fallback::Bool=true, concentric_first::Bool=true)
-
+function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0, debug::Bool=false, fit_fallback::Bool=true, concentric_first::Bool=true)
     if debug
         pstr = (refill.P !== nothing) ? "P on $(refill.P.grid) grid" : "dP_dψ on $(refill.dP_dψ.grid) grid"
         if refill.F_dF_dψ !== nothing
@@ -58,9 +68,9 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0,
         C = sol.u
 
         if i == 1
-            refill.C .= transpose(reshape(C, (2*refill.M + 1, 2*refill.N)))
+            refill.C .= transpose(reshape(C, (2 * refill.M + 1, 2 * refill.N)))
         else
-            refill.C .= (1.0-relax) .* refill.C .+ relax .* transpose(reshape(C, (2*refill.M + 1, 2*refill.N)))
+            refill.C .= (1.0 - relax) .* refill.C .+ relax .* transpose(reshape(C, (2 * refill.M + 1, 2 * refill.N)))
         end
         refill.C[end, :] .= 0.0 #ensure psi=0 on boundary
 
@@ -73,7 +83,7 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0,
             refill, warn_concentric = refit!(refill, Ψaxis, Raxis, Zaxis; debug, fit_fallback)
         end
 
-        error = abs((Ψaxis-Ψold)/Ψaxis)
+        error = abs((Ψaxis - Ψold) / Ψaxis)
         debug && println("    Status: Ψaxis = $Ψaxis, Error: $error")
         Ψold = Ψaxis
         if error <= tol && i > 1
@@ -91,8 +101,7 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0,
     return refill
 end
 
-function scale_Ip!(shot::Shot, I_c = Ip(shot))
-
+function scale_Ip!(shot::Shot, I_c=Ip(shot))
     (shot.Ip_target === nothing) && return
 
     if shot.Jt_R !== nothing
@@ -117,9 +126,10 @@ function scale_Ip!(shot::Shot, I_c = Ip(shot))
     return
 end
 
-function validate_current(shot; I_c = Ip(shot))
+function validate_current(shot; I_c=Ip(shot))
     sign_Ip = sign(I_c)
-    error_text(name, ) = "Provided $name profile produces regions with current opposite to the total current ($(sign_Ip)).\nNot allowed since Ψ becomes nonmonotonic - Please correct input profile"
+    error_text(name) =
+        "Provided $name profile produces regions with current opposite to the total current ($(sign_Ip)).\nNot allowed since Ψ becomes nonmonotonic - Please correct input profile"
     if shot.Jt_R !== nothing
         @assert all(sign(shot.Jt_R(x)) ∈ (sign_Ip, 0.0) for x in shot.ρ) error_text("Jt_R")
     elseif shot.Jt !== nothing

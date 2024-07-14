@@ -1,35 +1,47 @@
-function compute_Cmatrix(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, Ψ::F1, Q::QuadInfo) where {F1}
+function compute_Cmatrix(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, Ψ::F1, Q::QuadInfo) where {F1}
     return compute_Cmatrix(N, M, ρ, Ψ, Q, factorize(mass_matrix(N, ρ)))
 end
 
-function compute_Cmatrix(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, Ψ::F1, Q::QuadInfo, Afac::Factorization) where {F1}
-    C = zeros(2N, 2M+1)
+function compute_Cmatrix(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, Ψ::F1, Q::QuadInfo, Afac::Factorization) where {F1}
+    C = zeros(2N, 2M + 1)
     Fi, _, Fo, P = fft_prealloc(M)
     return compute_Cmatrix!(C, N, M, ρ, Ψ, Q, Afac, Fi, Fo, P)
 end
 
-function compute_Cmatrix!(C::AbstractMatrix{<:Real}, N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, Ψ_ρθ::F1,
-                          Q::QuadInfo, Afac::Factorization, Fi::AbstractVector{<:Complex}, Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan) where {F1}
+function compute_Cmatrix!(C::AbstractMatrix{<:Real}, N::Integer, M::Integer, ρ::AbstractVector{<:Real}, Ψ_ρθ::F1,
+    Q::QuadInfo, Afac::Factorization, Fi::AbstractVector{<:Complex}, Fo::AbstractVector{<:Complex}, P::FFTW.FFTWPlan) where {F1}
     for j in 1:N
         @views θFD_ρIP_f_nu!(C[2j-1, :], Ψ_ρθ, :odd, j, M, Fi, Fo, P, Q)
-        @views θFD_ρIP_f_nu!(C[2j  , :], Ψ_ρθ, :even, j, M, Fi, Fo, P, Q)
+        @views θFD_ρIP_f_nu!(C[2j, :], Ψ_ρθ, :even, j, M, Fi, Fo, P, Q)
     end
     ldiv!(Afac, C)
-    @views C[end,:] .= 0.0 # Ensures psi=0 on boundary
+    @views C[end, :] .= 0.0 # Ensures psi=0 on boundary
     return C
 end
 
-function Shot(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, surfaces :: AbstractVector{<:MXH}, Ψ;
-              P::ProfType=nothing, dP_dψ::ProfType=nothing,
-              F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
-              Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing, zero_boundary=false)
+function Shot(
+    N::Integer,
+    M::Integer,
+    ρ::AbstractVector{<:Real},
+    surfaces::AbstractVector{<:MXH},
+    Ψ;
+    P::ProfType=nothing,
+    dP_dψ::ProfType=nothing,
+    F_dF_dψ::ProfType=nothing,
+    Jt_R::ProfType=nothing,
+    Jt::ProfType=nothing,
+    Pbnd::Real=0.0,
+    Fbnd::Real=10.0,
+    Ip_target::IpType=nothing,
+    zero_boundary=false
+)
     @assert length(surfaces) == N
     L = length(surfaces[1].c)
-    S = zeros(5+2L, N)
+    S = zeros(5 + 2L, N)
     for (k, mxh) in enumerate(surfaces)
-       @views flat_coeffs!(S[:, k], mxh)
+        @views flat_coeffs!(S[:, k], mxh)
     end
-    Shot(N, M, ρ, S, Ψ; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target, zero_boundary)
+    return Shot(N, M, ρ, S, Ψ; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target, zero_boundary)
 end
 
 function Ψ_ρθ1(x, t, Ψ, S_FE, zero_boundary)
@@ -37,10 +49,22 @@ function Ψ_ρθ1(x, t, Ψ, S_FE, zero_boundary)
     return Ψ(R_Z(S_FE..., x, t)...)
 end
 
-function Shot(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, surfaces :: AbstractMatrix{<:Real}, Ψ::F1;
-              P::ProfType=nothing, dP_dψ::ProfType=nothing,
-              F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
-              Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing, zero_boundary=false) where {F1}
+function Shot(
+    N::Integer,
+    M::Integer,
+    ρ::AbstractVector{<:Real},
+    surfaces::AbstractMatrix{<:Real},
+    Ψ::F1;
+    P::ProfType=nothing,
+    dP_dψ::ProfType=nothing,
+    F_dF_dψ::ProfType=nothing,
+    Jt_R::ProfType=nothing,
+    Jt::ProfType=nothing,
+    Pbnd::Real=0.0,
+    Fbnd::Real=10.0,
+    Ip_target::IpType=nothing,
+    zero_boundary=false
+) where {F1}
     S_FE = surfaces_FE(ρ, surfaces)
     MXH_modes = (size(surfaces, 1) - 5) ÷ 2
     Q = QuadInfo(ρ, M, MXH_modes, S_FE...)
@@ -49,11 +73,21 @@ function Shot(N :: Integer, M :: Integer, ρ :: AbstractVector{<:Real}, surfaces
     return Shot(N, M, ρ, surfaces, C, S_FE..., Q; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
-function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ;
-              P::ProfType=nothing, dP_dψ::ProfType=nothing,
-              F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
-              Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing, zero_boundary=false)
-
+function Shot(
+    N::Integer,
+    M::Integer,
+    boundary::MXH,
+    Ψ;
+    P::ProfType=nothing,
+    dP_dψ::ProfType=nothing,
+    F_dF_dψ::ProfType=nothing,
+    Jt_R::ProfType=nothing,
+    Jt::ProfType=nothing,
+    Pbnd::Real=0.0,
+    Fbnd::Real=10.0,
+    Ip_target::IpType=nothing,
+    zero_boundary=false
+)
     ρ = range(0, 1, N)
 
     Raxis, Zaxis, _ = find_axis(Ψ, boundary.R0, boundary.Z0)
@@ -81,13 +115,22 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ;
     return Shot(N, M, ρ, surfaces, C, S_FE..., Q; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
-function Shot(N :: Integer, M :: Integer, boundary :: MXH;
-             Raxis::Real = boundary.R0, Zaxis::Real = boundary.Z0,
-             P::ProfType=nothing, dP_dψ::ProfType=nothing,
-             F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
-             Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing,
-             approximate_psi::Bool=false)
-
+function Shot(
+    N::Integer,
+    M::Integer,
+    boundary::MXH;
+    Raxis::Real=boundary.R0,
+    Zaxis::Real=boundary.Z0,
+    P::ProfType=nothing,
+    dP_dψ::ProfType=nothing,
+    F_dF_dψ::ProfType=nothing,
+    Jt_R::ProfType=nothing,
+    Jt::ProfType=nothing,
+    Pbnd::Real=0.0,
+    Fbnd::Real=10.0,
+    Ip_target::IpType=nothing,
+    approximate_psi::Bool=false
+)
     ρ = range(0, 1, N)
 
     L = length(boundary.c)
@@ -101,7 +144,7 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH;
     S_FE = surfaces_FE(ρ, surfaces)
     Q = QuadInfo(ρ, M, L, S_FE...)
 
-    C = zeros(2N, 2M+1)
+    C = zeros(2N, 2M + 1)
 
     shot = Shot(N, M, ρ, surfaces, C, S_FE..., Q; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 
@@ -114,7 +157,7 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH;
         end
         # something like the flux for uniform current density in elliptical wire
         a = boundary.R0 * boundary.ϵ
-        ψ0  = 0.5 * μ₀ * boundary.R0 * I0 / sqrt(0.5 * (1.0 + boundary.κ ^ 2))
+        ψ0 = 0.5 * μ₀ * boundary.R0 * I0 / sqrt(0.5 * (1.0 + boundary.κ^2))
         C[2:2:end, 1] .= ψ0 .* ((ρ ./ a) .^ 2 .- 1.0)
         C[1:2:end, 1] .= 2.0 .* ψ0 .* ρ ./ (a .^ 2)
         shot = Shot(N, M, ρ, surfaces, C, S_FE..., Q; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
@@ -123,10 +166,20 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH;
     return shot
 end
 
-function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ::FE_rep;
-             P::ProfType=nothing, dP_dψ::ProfType=nothing,
-             F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
-             Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing)
+function Shot(
+    N::Integer,
+    M::Integer,
+    boundary::MXH,
+    Ψ::FE_rep;
+    P::ProfType=nothing,
+    dP_dψ::ProfType=nothing,
+    F_dF_dψ::ProfType=nothing,
+    Jt_R::ProfType=nothing,
+    Jt::ProfType=nothing,
+    Pbnd::Real=0.0,
+    Fbnd::Real=10.0,
+    Ip_target::IpType=nothing
+)
 
     ρ = range(0, 1, N)
 
@@ -141,55 +194,92 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH, Ψ::FE_rep;
     S_FE = surfaces_FE(ρ, surfaces)
     Q = QuadInfo(ρ, M, L, S_FE...)
 
-    C = zeros(2N, 2M+1)
+    C = zeros(2N, 2M + 1)
     C[2:2:end, 1] .= Ψ.(ρ)
     C[1:2:end, 1] .= D.(Ref(Ψ), ρ)
 
     return Shot(N, M, ρ, surfaces, C, S_FE..., Q; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
-function Shot(N::Integer, M::Integer, ρ::AbstractVector{T}, surfaces::AbstractMatrix{<:Real},
-              C::AbstractMatrix{<:Real}, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep,
-              cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep}, Q::QuadInfo;
-              P::ProfType=nothing, dP_dψ::ProfType=nothing,
-              F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
-              Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing) where {T <: Real}
-    Vp    = FE_rep(ρ, Vector{T}(undef, 2N))
-    invR  = FE_rep(ρ, Vector{T}(undef, 2N))
+function Shot(
+    N::Integer,
+    M::Integer,
+    ρ::AbstractVector{T},
+    surfaces::AbstractMatrix{<:Real},
+    C::AbstractMatrix{<:Real},
+    R0fe::FE_rep,
+    Z0fe::FE_rep,
+    ϵfe::FE_rep,
+    κfe::FE_rep,
+    c0fe::FE_rep,
+    cfe::AbstractVector{<:FE_rep},
+    sfe::AbstractVector{<:FE_rep},
+    Q::QuadInfo;
+    P::ProfType=nothing,
+    dP_dψ::ProfType=nothing,
+    F_dF_dψ::ProfType=nothing,
+    Jt_R::ProfType=nothing,
+    Jt::ProfType=nothing,
+    Pbnd::Real=0.0,
+    Fbnd::Real=10.0,
+    Ip_target::IpType=nothing
+) where {T<:Real}
+    Vp = FE_rep(ρ, Vector{T}(undef, 2N))
+    invR = FE_rep(ρ, Vector{T}(undef, 2N))
     invR2 = FE_rep(ρ, Vector{T}(undef, 2N))
-    F  = FE_rep(ρ, Vector{T}(undef, 2N))
-    ρtor  = FE_rep(ρ, Vector{T}(undef, 2N))
+    F = FE_rep(ρ, Vector{T}(undef, 2N))
+    ρtor = FE_rep(ρ, Vector{T}(undef, 2N))
     # we need an initial ρtor, use ρ
     ρtor.coeffs[1:2:end] .= 1.0
     ρtor.coeffs[2:2:end] .= ρ
-    shot =  Shot(N, M, ρ, surfaces, C, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, Q, Vp, invR, invR2, F, ρtor;
-                 P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
+    shot = Shot(N, M, ρ, surfaces, C, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, Q, Vp, invR, invR2, F, ρtor;
+        P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
     set_FSAs!(shot)
     return shot
 end
 
-function Shot(N::Integer, M::Integer, ρ::AbstractVector{<:Real}, surfaces::AbstractMatrix{<:Real},
-              C::AbstractMatrix{<:Real}, R0fe::FE_rep, Z0fe::FE_rep, ϵfe::FE_rep, κfe::FE_rep, c0fe::FE_rep,
-              cfe::AbstractVector{<:FE_rep}, sfe::AbstractVector{<:FE_rep}, Q::QuadInfo,
-              Vp::FE_rep, invR::FE_rep, invR2::FE_rep, F::FE_rep, ρtor::FE_rep;
-              P::ProfType=nothing, dP_dψ::ProfType=nothing,
-              F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
-              Pbnd::Real=0.0, Fbnd::Real=10.0, Ip_target::IpType=nothing)
+function Shot(
+    N::Integer,
+    M::Integer,
+    ρ::AbstractVector{<:Real},
+    surfaces::AbstractMatrix{<:Real},
+    C::AbstractMatrix{<:Real},
+    R0fe::FE_rep,
+    Z0fe::FE_rep,
+    ϵfe::FE_rep,
+    κfe::FE_rep,
+    c0fe::FE_rep,
+    cfe::AbstractVector{<:FE_rep},
+    sfe::AbstractVector{<:FE_rep},
+    Q::QuadInfo,
+    Vp::FE_rep,
+    invR::FE_rep,
+    invR2::FE_rep,
+    F::FE_rep,
+    ρtor::FE_rep;
+    P::ProfType=nothing,
+    dP_dψ::ProfType=nothing,
+    F_dF_dψ::ProfType=nothing,
+    Jt_R::ProfType=nothing,
+    Jt::ProfType=nothing,
+    Pbnd::Real=0.0,
+    Fbnd::Real=10.0,
+    Ip_target::IpType=nothing
+)
     L = length(cfe)
-    cx  = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
-    sx  = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
+    cx = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
+    sx = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
     dcx = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
     dsx = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
     Afac = factorize(mass_matrix(N, ρ))
     MP = prof -> make_profile(prof, ρtor)
     return Shot(N, M, ρ, surfaces, C, MP(P), MP(dP_dψ), MP(F_dF_dψ), MP(Jt_R), MP(Jt), Pbnd, Fbnd, Ip_target,
-                R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, Q, Vp, invR, invR2, F, ρtor, cx, sx, dcx, dsx, Afac)
+        R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, Q, Vp, invR, invR2, F, ρtor, cx, sx, dcx, dsx, Afac)
 end
 
-function Shot(N :: Integer, M :: Integer, MXH_modes::Integer, filename::String; fix_Ip::Bool=false)
-
+function Shot(N::Integer, M::Integer, MXH_modes::Integer, filename::String; fix_Ip::Bool=false)
     g = MXHEquilibrium.readg(filename)
-    cc_in = identify_cocos(g, clockwise_phi=false)[1]
+    cc_in = identify_cocos(g; clockwise_phi=false)[1]
     g = transform_cocos(g, cc_in, 11)
     Ψ = efit(g, 11)
 
@@ -212,10 +302,17 @@ function Shot(N :: Integer, M :: Integer, MXH_modes::Integer, filename::String; 
     return Shot(N, M, bnd, Ψ; dP_dψ, F_dF_dψ, Pbnd, Fbnd, Ip_target)
 end
 
-function Shot(shot; P::ProfType=nothing, dP_dψ::ProfType=nothing,
-              F_dF_dψ::ProfType=nothing, Jt_R::ProfType=nothing, Jt::ProfType=nothing,
-              Pbnd::Real=shot.Pbnd, Fbnd::Real=shot.Fbnd, Ip_target::IpType=shot.Ip_target)
-
+function Shot(
+    shot;
+    P::ProfType=nothing,
+    dP_dψ::ProfType=nothing,
+    F_dF_dψ::ProfType=nothing,
+    Jt_R::ProfType=nothing,
+    Jt::ProfType=nothing,
+    Pbnd::Real=shot.Pbnd,
+    Fbnd::Real=shot.Fbnd,
+    Ip_target::IpType=shot.Ip_target
+)
     Np = (P !== nothing) + (dP_dψ !== nothing)
     if Np == 0
         P = deepcopy(shot.P)
@@ -241,9 +338,9 @@ function Shot(shot; P::ProfType=nothing, dP_dψ::ProfType=nothing,
     end
 
     return Shot(shot.N, shot.M, deepcopy(shot.ρ), deepcopy(shot.surfaces), deepcopy(shot.C),
-                deepcopy(shot.R0fe), deepcopy(shot.Z0fe), deepcopy(shot.ϵfe), deepcopy(shot.κfe),
-                deepcopy(shot.c0fe), deepcopy(shot.cfe), deepcopy(shot.sfe), deepcopy(shot.Q);
-                P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
+        deepcopy(shot.R0fe), deepcopy(shot.Z0fe), deepcopy(shot.ϵfe), deepcopy(shot.κfe),
+        deepcopy(shot.c0fe), deepcopy(shot.cfe), deepcopy(shot.sfe), deepcopy(shot.Q);
+        P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
 function psi_ρθ(shot::Shot, ρ::Real, θ::Real)
@@ -251,9 +348,9 @@ function psi_ρθ(shot::Shot, ρ::Real, θ::Real)
 
     k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
     tk = 2k
-    tkm1 = tk-1
-    tkp1 = tk+1
-    tkp2 = tk+2
+    tkm1 = tk - 1
+    tkp1 = tk + 1
+    tkp2 = tk + 2
 
     psi += shot.C[tkm1, 1] * nu_ou + shot.C[tk, 1] * nu_eu + shot.C[tkp1, 1] * nu_ol + shot.C[tkp2, 1] * nu_el
     shot.M == 0 && return psi
@@ -334,7 +431,7 @@ function find_axis(Ψ, R0::Real, Z0::Real)
     return (Raxis, Zaxis, Ψaxis)
 end
 
-ψ₀(shot::Shot) = shot.C[2,1]
+ψ₀(shot::Shot) = shot.C[2, 1]
 dψ_dρ(shot::Shot, ρ) = -2.0 * ρ * ψ₀(shot)
 
 function ρ(shot::Shot, psi)
@@ -343,12 +440,11 @@ function ρ(shot::Shot, psi)
 end
 
 function ψ(shot::Shot, ρ)
-    psin = ρ ^ 2
+    psin = ρ^2
     return ψ₀(shot) * (1.0 - psin)
 end
 
 @recipe function plot_shot(shot::Shot, axes::Symbol=:rz; points=101, contours=true, surfaces=false, extrapolate=false)
-
     if axes == :ρθ
         #aspect_ratio --> true
         ρs = range(0, 1, points)
@@ -383,7 +479,7 @@ end
         xs = range(Rmin, Rmax, points)
         ys = range(Zmin, Zmax, points)
 
-        Ψ = [shot(x,  y; extrapolate) for y in ys, x in xs]
+        Ψ = [shot(x, y; extrapolate) for y in ys, x in xs]
 
         pmin, pmax = extrema(Ψ)
 
@@ -395,7 +491,7 @@ end
         elseif pmax > 0
             cmap = :inferno
         else
-            cmap = cgrad(:inferno, rev=true)
+            cmap = cgrad(:inferno; rev=true)
         end
         @series begin
             seriestype --> :heatmap
@@ -432,7 +528,7 @@ end
 end
 
 # TEQUILA I/O
-save_shot(shot::Shot, filename::String="shot.bson") = BSON.bson(filename, Dict(:shot=>shot))
+save_shot(shot::Shot, filename::String="shot.bson") = BSON.bson(filename, Dict(:shot => shot))
 load_shot(filename::String="shot.bson") = BSON.load(filename)[:shot]
 
 # Implement AbstractEquilibrium interface
@@ -460,7 +556,7 @@ function MXHEquilibrium.psi_limits(shot::Shot)
     return ψ₀(shot), 0.0
 end
 
-function dpsi_dρ(shot::Shot, ρ::Real, θ::Real, D_bases = compute_D_bases(shot.ρ, ρ))
+function dpsi_dρ(shot::Shot, ρ::Real, θ::Real, D_bases=compute_D_bases(shot.ρ, ρ))
     dpsi = 0.0
     k = D_bases[1]
     D_nus = D_bases[2:end]
@@ -474,7 +570,7 @@ function dpsi_dρ(shot::Shot, ρ::Real, θ::Real, D_bases = compute_D_bases(shot
     return dpsi
 end
 
-function dpsi_dρ(shot::Shot, ρ::Real, Fsin::AbstractVector{<:Real}, Fcos::AbstractVector{<:Real}, D_bases = compute_D_bases(shot.ρ, ρ))
+function dpsi_dρ(shot::Shot, ρ::Real, Fsin::AbstractVector{<:Real}, Fcos::AbstractVector{<:Real}, D_bases=compute_D_bases(shot.ρ, ρ))
     dpsi = 0.0
     k = D_bases[1]
     D_nus = D_bases[2:end]
@@ -488,7 +584,7 @@ function dpsi_dρ(shot::Shot, ρ::Real, Fsin::AbstractVector{<:Real}, Fcos::Abst
     return dpsi
 end
 
-function dpsi_dθ(shot::Shot, ρ, θ, bases = compute_bases(shot.ρ, ρ))
+function dpsi_dθ(shot::Shot, ρ, θ, bases=compute_bases(shot.ρ, ρ))
     dpsi = 0.0
     k = bases[1]
     nus = bases[2:end]
@@ -502,14 +598,13 @@ function dpsi_dθ(shot::Shot, ρ, θ, bases = compute_bases(shot.ρ, ρ))
     return dpsi
 end
 
-function ∇psi(shot::Shot, ρ, θ, bases_Dbases = compute_both_bases(shot.ρ, ρ))
-    @views bases   = bases_Dbases[1:5]
+function ∇psi(shot::Shot, ρ, θ, bases_Dbases=compute_both_bases(shot.ρ, ρ))
+    @views bases = bases_Dbases[1:5]
     @views D_bases = bases_Dbases[1], bases_Dbases[6:9]...
     return dpsi_dρ(shot, ρ, θ, D_bases), dpsi_dθ(shot, ρ, θ, bases)
 end
 
-function MXHEquilibrium.psi_gradient(shot::Shot, R, Z; tid = Threads.threadid())
-
+function MXHEquilibrium.psi_gradient(shot::Shot, R, Z; tid=Threads.threadid())
     ρ, θ = ρθ_RZ(shot, R, Z)
 
     bases_Dbases = compute_both_bases(shot.ρ, ρ)
@@ -561,7 +656,7 @@ function _dp(x, shot)
         return 2.0 * dp1 - dp2
     end
     ψprime = dψ_dρ(shot, x)
-    pprime = (ψprime == 0.0) ? 0.0 : deriv(shot.P, x) /  ψprime
+    pprime = (ψprime == 0.0) ? 0.0 : deriv(shot.P, x) / ψprime
     return pprime
 end
 Pprime(shot::Shot, P, dP_dψ::Nothing) = (x -> _dp(x, shot))
@@ -583,19 +678,18 @@ function MXHEquilibrium.pressure(shot::Shot, psi)
     throw(ErrorException("Must specify one of the following: P, dP_dψ"))
 end
 
-
 function FFprime(shot::Shot, F_dF_dψ::Nothing, Jt_R::Nothing, Jt::Nothing)
     throw(ErrorException("Must specify one of the following: F_dF_dψ, Jt_R, Jt"))
 end
 
-FFprime(shot::Shot, F_dF_dψ, Jt_R::Nothing, Jt::Nothing; invR = nothing, invR2=nothing) = F_dF_dψ
+FFprime(shot::Shot, F_dF_dψ, Jt_R::Nothing, Jt::Nothing; invR=nothing, invR2=nothing) = F_dF_dψ
 
-function FFprime(shot::Shot, F_dF_dψ::Nothing, Jt_R, Jt::Nothing; invR = nothing, invR2 = FE_rep(shot, fsa_invR2))
+function FFprime(shot::Shot, F_dF_dψ::Nothing, Jt_R, Jt::Nothing; invR=nothing, invR2=FE_rep(shot, fsa_invR2))
     Pp = Pprime(shot, shot.P, shot.dP_dψ)
     return x -> -μ₀ * (Pp(x) + Jt_R(x) / twopi) / invR2(x)
 end
 
-function FFprime(shot::Shot, F_dF_dψ::Nothing, Jt_R::Nothing, Jt; invR = FE_rep(shot, fsa_invR), invR2 = FE_rep(shot, fsa_invR2))
+function FFprime(shot::Shot, F_dF_dψ::Nothing, Jt_R::Nothing, Jt; invR=FE_rep(shot, fsa_invR), invR2=FE_rep(shot, fsa_invR2))
     Pp = Pprime(shot, shot.P, shot.dP_dψ)
     return x -> -μ₀ * (Pp(x) + Jt(x) * invR(x) / twopi) / invR2(x)
 end
@@ -612,7 +706,7 @@ end
 function Fpol(shot::Shot, F_dF_dψ, ρ::Real)
     f(x) = F_dF_dψ(x) * dψ_dρ(shot, x)
     half_dF2 = quadgk(f, ρ, 1.0)[1]
-    F2 = shot.Fbnd ^ 2 - 2.0 * half_dF2
+    F2 = shot.Fbnd^2 - 2.0 * half_dF2
     return sign(shot.Fbnd) * sqrt(F2)
 end
 
@@ -642,10 +736,9 @@ function MXHEquilibrium.B0Ip_sign(shot::Shot)
     signB0 = sign(Fpol(shot, psi))
 
     sigma_Bp = cocos(shot).sigma_Bp
-    signIp = - sign(psi) / sigma_Bp
+    signIp = -sign(psi) / sigma_Bp
 
     return signB0 * signIp
-
 end
 
 MXHEquilibrium.psi_boundary(shot::Shot; kwargs...) = 0.0

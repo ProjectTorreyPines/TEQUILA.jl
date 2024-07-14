@@ -106,7 +106,12 @@ function Shot(N :: Integer, M :: Integer, boundary :: MXH;
     shot = Shot(N, M, ρ, surfaces, C, S_FE..., Q; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 
     if approximate_psi
-        I0 = (Ip_target !== nothing) ? Ip_target : Ip(shot)
+        if Ip_target !== nothing
+            @assert Ip_target != 0.0
+            I0 = Ip_target
+        else
+            I0 = Ip(shot)
+        end
         # something like the flux for uniform current density in elliptical wire
         a = boundary.R0 * boundary.ϵ
         ψ0  = 0.5 * μ₀ * boundary.R0 * I0 / sqrt(0.5 * (1.0 + boundary.κ ^ 2))

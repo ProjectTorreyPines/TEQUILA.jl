@@ -65,6 +65,7 @@ end
     FSA(f::F1, shot::F2, ρ::Real; tid=Threads.threadid()) where {F1,F2<:Shot}
 
 Compute flux-surface average of `f` at `ρ` for the equilibrium defined in `shot`
+
 Here `f` is a function of `θ` only, so something like f = θ -> F(ρ, θ) may be required
 """
 function FSA(f::F1, shot::F2, ρ::Real; tid=Threads.threadid()) where {F1,F2<:Shot}
@@ -92,7 +93,8 @@ end
     FSA(f::F1, shot::F2, ρ::Real, Vprime::F3; tid=Threads.threadid()) where {F1,F2<:Shot,F3<:FE_rep}
 
 Compute flux-surface average of `f` at `ρ` for the equilibrium defined in `shot`,
-    using the given finite-element representation of `Vprime`
+using the given finite-element representation of `Vprime`
+
 Here `f` is a function of `θ` only, so something like f = θ -> F(ρ, θ) may be required
 """
 function FSA(f::F1, shot::F2, ρ::Real, Vprime::F3; tid=Threads.threadid()) where {F1,F2<:Shot,F3<:FE_rep}
@@ -122,7 +124,8 @@ end
     FSA(f::F1, shot::F2, ρ::Real, Vprime::Real; tid=Threads.threadid()) where {F1,F2<:Shot}
 
 Compute flux-surface average of `f` at `ρ` for the equilibrium defined in `shot`,
-    using the given value of `Vprime`
+using the given value of `Vprime`
+
 Here `f` is a function of `θ` only, so something like f = θ -> F(ρ, θ) may be required
 """
 function FSA(f::F1, shot::F2, ρ::Real, Vprime::Real; tid=Threads.threadid()) where {F1,F2<:Shot}

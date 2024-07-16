@@ -1,10 +1,3 @@
-"""
-    fourier_decompose(f, M::Integer)
-
-Decompose f(θ) into a Fourier series with m from 0 to M
-Returns cosine coeffients and sine coefficients as tuple
-"""
-
 function fft_prealloc(M::Integer)
     tmp = zeros(2M + 4)
     Fi = complex(tmp)

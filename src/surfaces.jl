@@ -177,8 +177,9 @@ end
     ρθ_RZ(shot, R, Z; extrapolate::Bool=false)
 
 Find the MXH `(ρ, θ)` value corresponding the `(R, Z)` for a given `shot`
+
 `extrapolate=true` uses the final radial finite-element value to extrapolate outside boundary,
-    else ρ set to 1.0
+else ρ set to 1.0
 """
 function ρθ_RZ(shot, R, Z; extrapolate::Bool=false)
     f = x -> Δ(shot, x, R, Z)

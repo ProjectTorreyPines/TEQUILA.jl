@@ -17,8 +17,9 @@ make_profile(Y::Nothing, ρtor) = nothing
     make_profile(Yg::Tuple{<:FE_rep,Symbol}, ρtor=ρtor_default)
 
 Given a `Yg = (Y, grid)` where `Y` is a finite-element representation of a profile and
-    `grid` specifies if the grid is `:poloidal` or `:toroidal`
-`ρtor` is callable that converts the grid's ρ value to rho_tor_norm
+`grid` specifies if the grid is `:poloidal` or `:toroidal`
+
+`ρtor` is a callable that converts the grid's ρ value to rho_tor_norm
 """
 function make_profile(Yg::Tuple{<:FE_rep,Symbol}, ρtor=ρtor_default)
     Y, grid = Yg
@@ -31,8 +32,9 @@ end
     make_profile(Yg::Tuple{<:Function,Symbol}, ρtor=ρtor_default)
 
 Given a `Yg = (Y, grid)` where `Y` is a function of a profile and
-    `grid` specifies if the grid is `:poloidal` or `:toroidal`
-`ρtor` is callable that converts the grid's ρ value to rho_tor_norm
+`grid` specifies if the grid is `:poloidal` or `:toroidal`
+
+`ρtor` is a callable that converts the grid's ρ value to rho_tor_norm
 """
 function make_profile(Yg::Tuple{<:Function,Symbol}, ρtor=ρtor_default)
     Y, grid = Yg

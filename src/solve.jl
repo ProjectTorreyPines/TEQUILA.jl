@@ -18,14 +18,16 @@
     )
 
 Solve the equilibrium, initially defined by `shot` with `its` iterations.
-Will use pressure and current from `shot` unless provided in keywords.
+Pressure and current information taken from `shot` unless provided in keywords
+
 Returns a new Shot, often called `refill` by convention
-Keyword arguments
-    `tol` - Relative tolerance for convergence of the magnetic axis flux value to terminate iterations early
-    `relax` - Relaxation parameter on the Picard iterations. `Ψₙ₊₁ = relax * Ψ̃ₙ₊₁ + (1 - relax) * Ψₙ`
-    `debug=true` - Print debugging and convergence information
-    `fit_fallback=true` - Use concentric surfaces if any flux surface errors on refitting. Improves robustness in early iterations
-    `concentric_first=true` - Use concentric surfaces for first iteration, which can improve robustness if large changes from `shot` is expected
+
+# Keyword arguments
+ - `tol` - Relative tolerance for convergence of the magnetic axis flux value to terminate iterations early
+ - `relax` - Relaxation parameter on the Picard iterations. `Ψₙ₊₁ = relax * Ψ̃ₙ₊₁ + (1 - relax) * Ψₙ`
+ - `debug=true` - Print debugging and convergence information
+ - `fit_fallback=true` - Use concentric surfaces if any flux surface errors on refitting. Improves robustness in early iterations
+ - `concentric_first=true` - Use concentric surfaces for first iteration, which can improve robustness if large changes from `shot` is expected
 """
 function solve(
     shot::Shot,

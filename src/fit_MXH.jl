@@ -335,8 +335,10 @@ end
     refit!(shot::Shot, Ψaxis::Real, Raxis::Real, Zaxis::Real; debug::Bool=false, fit_fallback::Bool=true)
 
 Refit all the MXH surfaces to constant flux surfaces in `shot` assuming a magnetic axis given by `(Raxis, Zaxis, Ψaxis)`
-`fit_fallback=true`: Use concentric surfaces if any flux surface errors on refitting
-`debug=true` prints warning if the concentric fallback is used
+
+# Keyword arguments
+ - `fit_fallback=true`: Use concentric surfaces if any flux surface errors on refitting
+ - `debug=true` prints warning if the concentric fallback is used
 """
 function refit!(shot::Shot, Ψaxis::Real, Raxis::Real, Zaxis::Real; debug::Bool=false, fit_fallback::Bool=true)
     # Using ρ = rho poloidal (sqrt((Ψ-Ψaxis)/sqrt(Ψbnd-Ψaxis)))

@@ -73,8 +73,8 @@ end
     Profile{FE1<:FE_rep,PT1<:Union{FE_rep,Function}}
 
 A profile (pressure- or current-like) versus normalized ρ,
-    which stores the current finite-element representation, the original finite-element representation,
-    and whether the ρ `grid` is `:poloidal` or `:toroidal`
+which stores the current finite-element representation, the original finite-element representation,
+and whether the ρ `grid` is `:poloidal` or `:toroidal`
 """
 struct Profile{FE1<:FE_rep,PT1<:Union{FE_rep,Function}}
     fe::FE1
@@ -107,6 +107,7 @@ const ProfType = Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}
 
 The fundamental data structure for a TEQUILA equilibrium, storing grid, flux-surface, and equilibrium information,
     as well as preallocated work arrays
+
 `shot(R,Z)` returns the flux at point `(R,Z)`
 """
 mutable struct Shot{

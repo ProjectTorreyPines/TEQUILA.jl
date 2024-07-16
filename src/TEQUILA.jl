@@ -69,8 +69,13 @@ mutable struct QuadInfo{
     gθθ::MR3
 end
 
-const IpType = Union{Nothing,Real}
+"""
+    Profile{FE1<:FE_rep,PT1<:Union{FE_rep,Function}}
 
+A profile (pressure- or current-like) versus normalized ρ,
+    which stores the current finite-element representation, the original finite-element representation,
+    and whether the ρ `grid` is `:poloidal` or `:toroidal`
+"""
 struct Profile{FE1<:FE_rep,PT1<:Union{FE_rep,Function}}
     fe::FE1
     orig::PT1
@@ -79,6 +84,31 @@ end
 
 const ProfType = Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}
 
+"""
+    Shot{
+        I1<:Integer,
+        VR1<:AbstractVector{<:Real},
+        MR1<:AbstractMatrix{<:Real},
+        MR2<:AbstractMatrix{<:Real},
+        PT1<:Union{Nothing,Profile},
+        PT2<:Union{Nothing,Profile},
+        PT3<:Union{Nothing,Profile},
+        PT4<:Union{Nothing,Profile},
+        PT5<:Union{Nothing,Profile},
+        R1<:Real,
+        R2<:Real,
+        IP1<:Union{Nothing,Real},
+        FE1<:FE_rep,
+        VFE1<:AbstractVector{<:FE_rep},
+        Q1<:QuadInfo,
+        VDC1<:Vector{<:DiffCache},
+        F1<:Factorization
+    } <: AbstractEquilibrium
+
+The fundamental data structure for a TEQUILA equilibrium, storing grid, flux-surface, and equilibrium information,
+    as well as preallocated work arrays
+`shot(R,Z)` returns the flux at point `(R,Z)`
+"""
 mutable struct Shot{
     I1<:Integer,
     VR1<:AbstractVector{<:Real},
@@ -91,7 +121,7 @@ mutable struct Shot{
     PT5<:Union{Nothing,Profile},
     R1<:Real,
     R2<:Real,
-    IP1<:IpType,
+    IP1<:Union{Nothing,Real},
     FE1<:FE_rep,
     VFE1<:AbstractVector{<:FE_rep},
     Q1<:QuadInfo,
@@ -132,29 +162,21 @@ mutable struct Shot{
 end
 
 include("initialize.jl")
-export Ψmiller
 
 include("profile.jl")
-export Profile, make_profile
 
 include("shot.jl")
-export Shot, psi_ρθ, plot_shot, find_axis
+export Shot, psi_ρθ, find_axis
 
 include("quadrature.jl")
-export QuadInfo
 
 include("FE_Fourier.jl")
-export θFD_ρIP_f_nu, fourier_decompose!, fft_prealloc
 
 include("surfaces.jl")
-export concentric_surface, concentric_surface!, surfaces_FE, R_Z, ρθ_RZ, surface_bracket
-export Jacobian, gρρ, dR_dρ, dR_dθ, dZ_dρ, dZ_dθ
 
 include("fit_MXH.jl")
-export refit!
 
 include("GS.jl")
-export preallocate_Astar, define_Astar, define_Astar!, set_bc!, define_B, define_B!
 
 include("fsa.jl")
 export FSA, Vprime, fsa_invR2, fsa_invR, Ip

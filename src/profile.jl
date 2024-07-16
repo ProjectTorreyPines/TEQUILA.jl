@@ -4,10 +4,22 @@ deriv(y::Function, x) = ForwardDiff.derivative(y, x)
 deriv(y::FE_rep, x) = D(y, x)
 deriv(y::Profile, x) = D(y.fe, x)
 
+"""
+    make_profile(Y::Nothing, ρtor)
+
+Dummy profile function that returns `nothing`
+"""
 make_profile(Y::Nothing, ρtor) = nothing
 
 ρtor_default(x::Real) = x
 
+"""
+    make_profile(Yg::Tuple{<:FE_rep,Symbol}, ρtor=ρtor_default)
+
+Given a `Yg = (Y, grid)` where `Y` is a finite-element representation of a profile and
+    `grid` specifies if the grid is `:poloidal` or `:toroidal`
+`ρtor` is callable that converts the grid's ρ value to rho_tor_norm
+"""
 function make_profile(Yg::Tuple{<:FE_rep,Symbol}, ρtor=ρtor_default)
     Y, grid = Yg
     prof = Profile(deepcopy(Y), deepcopy(Y), grid)
@@ -15,6 +27,13 @@ function make_profile(Yg::Tuple{<:FE_rep,Symbol}, ρtor=ρtor_default)
     return prof
 end
 
+"""
+    make_profile(Yg::Tuple{<:Function,Symbol}, ρtor=ρtor_default)
+
+Given a `Yg = (Y, grid)` where `Y` is a function of a profile and
+    `grid` specifies if the grid is `:poloidal` or `:toroidal`
+`ρtor` is callable that converts the grid's ρ value to rho_tor_norm
+"""
 function make_profile(Yg::Tuple{<:Function,Symbol}, ρtor=ρtor_default)
     Y, grid = Yg
     N = length(ρtor.x)^2 # lots of resolution

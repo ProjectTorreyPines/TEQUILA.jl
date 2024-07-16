@@ -37,6 +37,11 @@ function fsa_trapa(J::F1, f::F2; min_level=3, max_level=20, tol::Real=eps(typeof
     return int_Jf / int_J
 end
 
+"""
+    Vprime(shot::F1, ρ::Real; tid=Threads.threadid()) where {F1<:Shot}
+
+Compute dV/dΨ at `ρ` for the equilibrium defined in `shot`
+"""
 function Vprime(shot::F1, ρ::Real; tid=Threads.threadid()) where {F1<:Shot}
     k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
     R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
@@ -56,6 +61,12 @@ function Vprime(shot::F1, ρ::Real; tid=Threads.threadid()) where {F1<:Shot}
     return twopi * trapa(J)
 end
 
+"""
+    FSA(f::F1, shot::F2, ρ::Real; tid=Threads.threadid()) where {F1,F2<:Shot}
+
+Compute flux-surface average of `f` at `ρ` for the equilibrium defined in `shot`
+Here `f` is a function of `θ` only, so something like f = θ -> F(ρ, θ) may be required
+"""
 function FSA(f::F1, shot::F2, ρ::Real; tid=Threads.threadid()) where {F1,F2<:Shot}
     ρ == 0.0 && return f(0.0)
 
@@ -77,6 +88,13 @@ function FSA(f::F1, shot::F2, ρ::Real; tid=Threads.threadid()) where {F1,F2<:Sh
     return fsa_trapa(J, f)
 end
 
+"""
+    FSA(f::F1, shot::F2, ρ::Real, Vprime::F3; tid=Threads.threadid()) where {F1,F2<:Shot,F3<:FE_rep}
+
+Compute flux-surface average of `f` at `ρ` for the equilibrium defined in `shot`,
+    using the given finite-element representation of `Vprime`
+Here `f` is a function of `θ` only, so something like f = θ -> F(ρ, θ) may be required
+"""
 function FSA(f::F1, shot::F2, ρ::Real, Vprime::F3; tid=Threads.threadid()) where {F1,F2<:Shot,F3<:FE_rep}
     ρ == 0.0 && return f(0.0)
 
@@ -100,6 +118,13 @@ function FSA(f::F1, shot::F2, ρ::Real, Vprime::F3; tid=Threads.threadid()) wher
     return twopi * trapa(Jf) / Vp
 end
 
+"""
+   FSA(f::F1, shot::F2, ρ::Real, Vprime::Real; tid=Threads.threadid()) where {F1,F2<:Shot}
+
+Compute flux-surface average of `f` at `ρ` for the equilibrium defined in `shot`,
+    using the given value of `Vprime`
+Here `f` is a function of `θ` only, so something like f = θ -> F(ρ, θ) may be required
+"""
 function FSA(f::F1, shot::F2, ρ::Real, Vprime::Real; tid=Threads.threadid()) where {F1,F2<:Shot}
     ρ == 0.0 && return f(0.0)
 
@@ -121,6 +146,11 @@ function FSA(f::F1, shot::F2, ρ::Real, Vprime::Real; tid=Threads.threadid()) wh
     return twopi * trapa(Jf) / Vprime
 end
 
+"""
+   fsa_invR2(shot::F1, ρ; tid=Threads.threadid()) where {F1<:Shot}
+
+Compute <R⁻²> at `ρ` for the equilibrium defined in `shot`
+"""
 function fsa_invR2(shot::F1, ρ; tid=Threads.threadid()) where {F1<:Shot}
     k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
     R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
@@ -134,6 +164,11 @@ function fsa_invR2(shot::F1, ρ; tid=Threads.threadid()) where {F1<:Shot}
     return FSA(f, shot, ρ)
 end
 
+"""
+   fsa_invR(shot::F1, ρ; tid=Threads.threadid()) where {F1<:Shot}
+
+Compute <R⁻¹> at `ρ` for the equilibrium defined in `shot`
+"""
 function fsa_invR(shot::F1, ρ; tid=Threads.threadid()) where {F1<:Shot}
     k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
     R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
@@ -271,7 +306,12 @@ function Ψ(shot)
     return Psi
 end
 
-function Ip(shot::F1; ε::Real=1e-6) where {F1<:Shot}
+"""
+    Ip(shot::F1; ε::Real=1e-6) where {F1<:Shot}
+
+Returns the plasma current of `shot`
+"""
+function Ip(shot::F1) where {F1<:Shot}
     Vp = FE_rep(shot, Vprime)
     if shot.Jt_R !== nothing
         f1 = x -> Vp(x) * shot.Jt_R(x)
@@ -289,7 +329,7 @@ function Ip(shot::F1; ε::Real=1e-6) where {F1<:Shot}
     return 0.0
 end
 
-function Ip_ffp(shot::F1; ε::Real=1e-6) where {F1<:Shot}
+function Ip_ffp(shot::F1) where {F1<:Shot}
     (shot.F_dF_dψ === nothing) && return 0.0
 
     Vp = FE_rep(shot, Vprime)

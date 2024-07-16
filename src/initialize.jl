@@ -1,4 +1,8 @@
-# Ψ constant on Miller shape and equal to ρ^2
+"""
+    Ψmiller(R::Real, Z::Real; R0::Real=0.0, Z0::Real=0.0, a::Real=1.0, κ::Real=1.0, δ::Real=0.0)
+
+Compute flux equal to ρ^2 at point (R, Z), assuming normalized radius inside concentric Miller shape
+"""
 function Ψmiller(R::Real, Z::Real; R0::Real=0.0, Z0::Real=0.0, a::Real=1.0, κ::Real=1.0, δ::Real=0.0)
     function Δ!(F, x)
         F[1] = R0 + a * x[1] * cos(x[2] + asin(δ) * sin(x[2])) - R

@@ -19,6 +19,27 @@ function compute_Cmatrix!(C::AbstractMatrix{<:Real}, N::Integer, M::Integer, ρ:
     return C
 end
 
+"""
+    Shot(
+        N::Integer,
+        M::Integer,
+        ρ::AbstractVector{<:Real},
+        surfaces::AbstractVector{<:MXH},
+        Ψ;
+        P::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        dP_dψ::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        F_dF_dψ::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        Jt_R::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        Jt::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        Pbnd::Real=0.0,
+        Fbnd::Real=10.0,
+        Ip_target::Union{Nothing,Real}=nothing,
+        zero_boundary=false
+    )
+
+Initialize a Shot data structure with `surfaces` defined as a Vector of `MXH` and
+initial flux defined as a function `Ψ(R,Z)`
+"""
 function Shot(
     N::Integer,
     M::Integer,
@@ -32,7 +53,7 @@ function Shot(
     Jt::ProfType=nothing,
     Pbnd::Real=0.0,
     Fbnd::Real=10.0,
-    Ip_target::IpType=nothing,
+    Ip_target::Union{Nothing,Real}=nothing,
     zero_boundary=false
 )
     @assert length(surfaces) == N
@@ -49,6 +70,27 @@ function Ψ_ρθ1(x, t, Ψ, S_FE, zero_boundary)
     return Ψ(R_Z(S_FE..., x, t)...)
 end
 
+"""
+    Shot(
+        N::Integer,
+        M::Integer,
+        ρ::AbstractVector{<:Real},
+        surfaces::AbstractMatrix{<:Real},
+        Ψ::F1;
+        P::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        dP_dψ::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        F_dF_dψ::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        Jt_R::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        Jt::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        Pbnd::Real=0.0,
+        Fbnd::Real=10.0,
+        Ip_target::Union{Nothing,Real}=nothing,
+        zero_boundary=false
+    ) where {F1}
+
+Initialize a Shot data structure with `surfaces` defined as a matrix of MXH coefficients and the
+initial flux defined as a function `Ψ(R,Z)`
+"""
 function Shot(
     N::Integer,
     M::Integer,
@@ -62,7 +104,7 @@ function Shot(
     Jt::ProfType=nothing,
     Pbnd::Real=0.0,
     Fbnd::Real=10.0,
-    Ip_target::IpType=nothing,
+    Ip_target::Union{Nothing,Real}=nothing,
     zero_boundary=false
 ) where {F1}
     S_FE = surfaces_FE(ρ, surfaces)
@@ -73,6 +115,26 @@ function Shot(
     return Shot(N, M, ρ, surfaces, C, S_FE..., Q; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
+"""
+    Shot(
+        N::Integer,
+        M::Integer,
+        boundary::MXH,
+        Ψ;
+        P::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        dP_dψ::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        F_dF_dψ::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        Jt_R::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        Jt::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        Pbnd::Real=0.0,
+        Fbnd::Real=10.0,
+        Ip_target::Union{Nothing,Real}=nothing,
+        zero_boundary=false
+    )
+
+Initialize a Shot data structure assuming flux surfaces concentric to `boundary` and
+initial flux defined as a function `Ψ(R,Z)`
+"""
 function Shot(
     N::Integer,
     M::Integer,
@@ -85,7 +147,7 @@ function Shot(
     Jt::ProfType=nothing,
     Pbnd::Real=0.0,
     Fbnd::Real=10.0,
-    Ip_target::IpType=nothing,
+    Ip_target::Union{Nothing,Real}=nothing,
     zero_boundary=false
 )
     ρ = range(0, 1, N)
@@ -115,6 +177,27 @@ function Shot(
     return Shot(N, M, ρ, surfaces, C, S_FE..., Q; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
+"""
+    Shot(
+        N::Integer,
+        M::Integer,
+        boundary::MXH;
+        Raxis::Real=boundary.R0,
+        Zaxis::Real=boundary.Z0,
+        P::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        dP_dψ::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        F_dF_dψ::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        Jt_R::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        Jt::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        Pbnd::Real=0.0,
+        Fbnd::Real=10.0,
+        Ip_target::Union{Nothing,Real}=nothing,
+        approximate_psi::Bool=false
+    )
+
+Initialize a Shot data structure assuming flux surfaces concentric to `boundary`
+Flux initialized to zero, or approximated from plasma current assuming uniform current density in elliptical wire
+"""
 function Shot(
     N::Integer,
     M::Integer,
@@ -128,7 +211,7 @@ function Shot(
     Jt::ProfType=nothing,
     Pbnd::Real=0.0,
     Fbnd::Real=10.0,
-    Ip_target::IpType=nothing,
+    Ip_target::Union{Nothing,Real}=nothing,
     approximate_psi::Bool=false
 )
     ρ = range(0, 1, N)
@@ -166,6 +249,25 @@ function Shot(
     return shot
 end
 
+"""
+    Shot(
+        N::Integer,
+        M::Integer,
+        boundary::MXH,
+        Ψ::FE_rep;
+        P::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        dP_dψ::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        F_dF_dψ::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        Jt_R::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        Jt::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        Pbnd::Real=0.0,
+        Fbnd::Real=10.0,
+        Ip_target::Union{Nothing,Real}=nothing
+    )
+
+Initialize a Shot data structure assuming flux surfaces concentric to `boundary` and constant flux on surfaces,
+as define by 1D finite-element representation `Ψ`
+"""
 function Shot(
     N::Integer,
     M::Integer,
@@ -178,7 +280,7 @@ function Shot(
     Jt::ProfType=nothing,
     Pbnd::Real=0.0,
     Fbnd::Real=10.0,
-    Ip_target::IpType=nothing
+    Ip_target::Union{Nothing,Real}=nothing
 )
 
     ρ = range(0, 1, N)
@@ -215,14 +317,14 @@ function Shot(
     cfe::AbstractVector{<:FE_rep},
     sfe::AbstractVector{<:FE_rep},
     Q::QuadInfo;
-    P::ProfType=nothing,
-    dP_dψ::ProfType=nothing,
-    F_dF_dψ::ProfType=nothing,
-    Jt_R::ProfType=nothing,
-    Jt::ProfType=nothing,
+    P::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+    dP_dψ::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+    F_dF_dψ::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+    Jt_R::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+    Jt::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
     Pbnd::Real=0.0,
     Fbnd::Real=10.0,
-    Ip_target::IpType=nothing
+    Ip_target::Union{Nothing,Real}=nothing
 ) where {T<:Real}
     Vp = FE_rep(ρ, Vector{T}(undef, 2N))
     invR = FE_rep(ρ, Vector{T}(undef, 2N))
@@ -264,7 +366,7 @@ function Shot(
     Jt::ProfType=nothing,
     Pbnd::Real=0.0,
     Fbnd::Real=10.0,
-    Ip_target::IpType=nothing
+    Ip_target::Union{Nothing,Real}=nothing
 )
     L = length(cfe)
     cx = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
@@ -277,6 +379,12 @@ function Shot(
         R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, Q, Vp, invR, invR2, F, ρtor, cx, sx, dcx, dsx, Afac)
 end
 
+"""
+    Shot(N::Integer, M::Integer, MXH_modes::Integer, filename::String; fix_Ip::Bool=false)
+
+Initialize Shot from `filename` gEQDSK file,
+with `N` radial grid points, `M` poloidal Fourier modes, and flux surfaces defined with `MXH_modes`
+"""
 function Shot(N::Integer, M::Integer, MXH_modes::Integer, filename::String; fix_Ip::Bool=false)
     g = MXHEquilibrium.readg(filename)
     cc_in = identify_cocos(g; clockwise_phi=false)[1]
@@ -302,6 +410,21 @@ function Shot(N::Integer, M::Integer, MXH_modes::Integer, filename::String; fix_
     return Shot(N, M, bnd, Ψ; dP_dψ, F_dF_dψ, Pbnd, Fbnd, Ip_target)
 end
 
+"""
+    Shot(
+        shot;
+        P::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        dP_dψ::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        F_dF_dψ::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        Jt_R::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        Jt::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
+        Pbnd::Real=shot.Pbnd,
+        Fbnd::Real=shot.Fbnd,
+        Ip_target::Union{Nothing,Real}=shot.Ip_target
+    )
+
+Return a new Shot based on an existing `shot`, but with pressure and current quantities updated accordingly
+"""
 function Shot(
     shot;
     P::ProfType=nothing,
@@ -311,7 +434,7 @@ function Shot(
     Jt::ProfType=nothing,
     Pbnd::Real=shot.Pbnd,
     Fbnd::Real=shot.Fbnd,
-    Ip_target::IpType=shot.Ip_target
+    Ip_target::Union{Nothing,Real}=shot.Ip_target
 )
     Np = (P !== nothing) + (dP_dψ !== nothing)
     if Np == 0
@@ -343,6 +466,11 @@ function Shot(
         P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
 end
 
+"""
+    psi_ρθ(shot::Shot, ρ::Real, θ::Real)
+
+Return the flux from `shot` at the MXH `(ρ, θ)`
+"""
 function psi_ρθ(shot::Shot, ρ::Real, θ::Real)
     psi = 0.0
 
@@ -407,18 +535,35 @@ function psi_ρθ(shot::Shot, ρ::Real, Fsin::AbstractVector{<:Real}, Fcos::Abst
     return psi
 end
 
+"""
+    (shot::Shot)(r, z; extrapolate::Bool=false)
 
+Functor for a Shot - returns the flux at `(r, z)`
+`extrapolate=true` uses the final radial finite-element value to extrapolate outside boundary,
+else the flux is zero
+"""
 function (shot::Shot)(r, z; extrapolate::Bool=false)
     ρ, θ = ρθ_RZ(shot, r, z; extrapolate)
     return psi_ρθ(shot, ρ, θ)
 end
 
-function find_axis(shot)
+"""
+    find_axis(shot::Shot)
+
+Returns the location and flux value of the magnetic axis, `(Raxis, Zaxis, Ψaxis)`
+"""
+function find_axis(shot::Shot)
     R0 = shot.surfaces[1, 1]
     Z0 = shot.surfaces[2, 1]
     return find_axis(shot, R0, Z0)
 end
 
+"""
+    find_axis(Ψ, R0::Real, Z0::Real)
+
+Returns the location and flux value of the magnetic axis, `(Raxis, Zaxis, Ψaxis)`,
+with initial guess `(R0, Z0)`
+"""
 function find_axis(Ψ, R0::Real, Z0::Real)
     psign = sign(Ψ(R0, Z0))
     f(x) = -psign * Ψ(x[1], x[2])
@@ -434,14 +579,14 @@ end
 ψ₀(shot::Shot) = shot.C[2, 1]
 dψ_dρ(shot::Shot, ρ) = -2.0 * ρ * ψ₀(shot)
 
+"""
+    ρ(shot::Shot, psi)
+
+Returns the normalized poloidal rho for `shot` and flux `psi`
+"""
 function ρ(shot::Shot, psi)
     psin = 1.0 - psi / ψ₀(shot)
     return sqrt(psin)
-end
-
-function ψ(shot::Shot, ρ)
-    psin = ρ^2
-    return ψ₀(shot) * (1.0 - psin)
 end
 
 @recipe function plot_shot(shot::Shot, axes::Symbol=:rz; points=101, contours=true, surfaces=false, extrapolate=false)

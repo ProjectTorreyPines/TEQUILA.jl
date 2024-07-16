@@ -173,6 +173,13 @@ function Δ(shot, ρ, R, Z; tid=Threads.threadid())
     return Δ
 end
 
+"""
+    ρθ_RZ(shot, R, Z; extrapolate::Bool=false)
+
+Find the MXH `(ρ, θ)` value corresponding the `(R, Z)` for a given `shot`
+`extrapolate=true` uses the final radial finite-element value to extrapolate outside boundary,
+    else ρ set to 1.0
+"""
 function ρθ_RZ(shot, R, Z; extrapolate::Bool=false)
     f = x -> Δ(shot, x, R, Z)
     if f(1.0) >= 0.0
@@ -183,10 +190,6 @@ function ρθ_RZ(shot, R, Z; extrapolate::Bool=false)
     θ, _ = (ρ == 0.0) ? (0.0, 0.0) : θ_at_RZ(shot, ρ, R, Z)
     return ρ, θ
 end
-
-##########################################################
-# BCL 8/24/22: THESE SHOULD ALL MAKE USE OF compute_bases
-##########################################################
 
 function evaluate_csx!(shot::Shot, k::Integer, nu_ou, nu_eu, nu_ol, nu_el; tid=Threads.threadid())
     return evaluate_csx!(shot._cx, shot._sx, shot.cfe, shot.sfe, k, nu_ou, nu_eu, nu_ol, nu_el; tid)

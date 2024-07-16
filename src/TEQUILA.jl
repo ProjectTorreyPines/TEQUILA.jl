@@ -185,6 +185,6 @@ include("solve.jl")
 export solve
 
 const document = Dict()
-document[Symbol(@__MODULE__)] = [name for name in Base.names(@__MODULE__; all=false, imported=false) if name != Symbol(@__MODULE__)]
+document[Symbol(@__MODULE__)] = [:solve; [name for name in Base.names(@__MODULE__; all=false, imported=false) if (name != Symbol(@__MODULE__) && name != :solve]]
 
 end

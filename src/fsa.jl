@@ -119,7 +119,7 @@ function FSA(f::F1, shot::F2, ρ::Real, Vprime::F3; tid=Threads.threadid()) wher
 end
 
 """
-   FSA(f::F1, shot::F2, ρ::Real, Vprime::Real; tid=Threads.threadid()) where {F1,F2<:Shot}
+    FSA(f::F1, shot::F2, ρ::Real, Vprime::Real; tid=Threads.threadid()) where {F1,F2<:Shot}
 
 Compute flux-surface average of `f` at `ρ` for the equilibrium defined in `shot`,
     using the given value of `Vprime`
@@ -147,7 +147,7 @@ function FSA(f::F1, shot::F2, ρ::Real, Vprime::Real; tid=Threads.threadid()) wh
 end
 
 """
-   fsa_invR2(shot::F1, ρ; tid=Threads.threadid()) where {F1<:Shot}
+    fsa_invR2(shot::F1, ρ; tid=Threads.threadid()) where {F1<:Shot}
 
 Compute <R⁻²> at `ρ` for the equilibrium defined in `shot`
 """
@@ -165,7 +165,7 @@ function fsa_invR2(shot::F1, ρ; tid=Threads.threadid()) where {F1<:Shot}
 end
 
 """
-   fsa_invR(shot::F1, ρ; tid=Threads.threadid()) where {F1<:Shot}
+    fsa_invR(shot::F1, ρ; tid=Threads.threadid()) where {F1<:Shot}
 
 Compute <R⁻¹> at `ρ` for the equilibrium defined in `shot`
 """

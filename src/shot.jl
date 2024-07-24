@@ -823,7 +823,7 @@ function MXHEquilibrium.pressure(shot::Shot, psi)
     throw(ErrorException("Must specify one of the following: P, dP_dψ"))
 end
 
-function FFprime(shot::Shot, F_dF_dψ::Nothing, Jt_R::Nothing, Jt::Nothing)
+function FFprime(shot::Shot, F_dF_dψ::Nothing, Jt_R::Nothing, Jt::Nothing; invR=nothing, invR2=nothing)
     throw(ErrorException("Must specify one of the following: F_dF_dψ, Jt_R, Jt"))
 end
 
@@ -844,21 +844,22 @@ function Fpol_dFpol_dψ(shot::Shot, ρ::Real; kwargs...)
     return ffp(ρ)
 end
 
-function Fpol(shot::Shot, ρ::Real; kwargs...)
+function Fpol(shot::Shot, ρ::Real, endpoint::Tuple{Real, Real}=(1.0, shot.Fbnd); kwargs...)
     return Fpol(shot, FFprime(shot, shot.F_dF_dψ, shot.Jt_R, shot.Jt; kwargs...), ρ)
 end
 
-function Fpol(shot::Shot, F_dF_dψ, ρ::Real)
+function Fpol(shot::Shot, F_dF_dψ, ρ::Real, endpoint::Tuple{Real, Real}=(1.0, shot.Fbnd))
     f(x) = F_dF_dψ(x) * dψ_dρ(shot, x)
-    half_dF2 = quadgk(f, ρ, 1.0)[1]
-    F2 = shot.Fbnd^2 - 2.0 * half_dF2
+    ρend, Fend = endpoint
+    half_F2 = quadgk(f, ρend, ρ)[1]
+    F2 = Fend^2 + 2.0 * half_F2
     return sign(shot.Fbnd) * sqrt(F2)
 end
 
 # Misnomer: "poloidal_current" is actually Fpol = R*Bt, so we'll rename
-function MXHEquilibrium.poloidal_current(shot::Shot, psi)
+function MXHEquilibrium.poloidal_current(shot::Shot, psi; use_cached::Bool=true)
     rho = ρ(shot, psi)
-    return Fpol(shot, rho)
+    return use_cached ? shot.F(rho) : Fpol(shot, rho)
 end
 
 function dFpol_dψ(shot::Shot, ρ::Real)

@@ -386,7 +386,7 @@ Initialize Shot from `filename` gEQDSK file,
 with `N` radial grid points, `M` poloidal Fourier modes, and flux surfaces defined with `MXH_modes`
 """
 function Shot(N::Integer, M::Integer, MXH_modes::Integer, filename::String; fix_Ip::Bool=false)
-    g = MXHEquilibrium.readg(filename)
+    g = MXHEquilibrium.readg(filename; set_time=0.0)
     cc_in = identify_cocos(g; clockwise_phi=false)[1]
     g = transform_cocos(g, cc_in, 11)
     Ψ = efit(g, 11)

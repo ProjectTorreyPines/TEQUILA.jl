@@ -23,11 +23,12 @@ Pressure and current information taken from `shot` unless provided in keywords
 Returns a new Shot, often called `refill` by convention
 
 # Keyword arguments
- - `tol` - Relative tolerance for convergence of the magnetic axis flux value to terminate iterations early
- - `relax` - Relaxation parameter on the Picard iterations. `Ψₙ₊₁ = relax * Ψ̃ₙ₊₁ + (1 - relax) * Ψₙ`
- - `debug=true` - Print debugging and convergence information
- - `fit_fallback=true` - Use concentric surfaces if any flux surface errors on refitting. Improves robustness in early iterations
- - `concentric_first=true` - Use concentric surfaces for first iteration, which can improve robustness if large changes from `shot` is expected
+
+  - `tol` - Relative tolerance for convergence of the magnetic axis flux value to terminate iterations early
+  - `relax` - Relaxation parameter on the Picard iterations. `Ψₙ₊₁ = relax * Ψ̃ₙ₊₁ + (1 - relax) * Ψₙ`
+  - `debug=true` - Print debugging and convergence information
+  - `fit_fallback=true` - Use concentric surfaces if any flux surface errors on refitting. Improves robustness in early iterations
+  - `concentric_first=true` - Use concentric surfaces for first iteration, which can improve robustness if large changes from `shot` is expected
 """
 function solve(
     shot::Shot,
@@ -72,7 +73,6 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0, debu
     L = 2 * refill.N * (2 * refill.M + 1)
     B = zeros(L)
     C = zeros(L)
-    Ψold = 0.0
     warn_concentric = false
     _, _, Ψold = find_axis(refill)
 

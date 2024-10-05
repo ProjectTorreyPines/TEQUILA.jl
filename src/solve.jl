@@ -159,12 +159,14 @@ end
 
 function validate_current(shot; I_c=Ip(shot))
     sign_Ip = sign(I_c)
-    error_text(name) =
-        "Provided $name profile produces regions with current opposite to the total current ($(sign_Ip)).\nNot allowed since Ψ becomes nonmonotonic - Please correct input profile"
+    error_text(name, values) =
+        "Provided $name profile produces regions with current opposite to the total current ($(sign_Ip)).\nNot allowed since Ψ becomes nonmonotonic - Please correct input profile\n($values    )"
     if shot.Jt_R !== nothing
-        @assert all(sign(shot.Jt_R(x)) ∈ (sign_Ip, 0.0) for x in shot.ρ) error_text("Jt_R")
+        signs = sign.(shot.Jt_R.(shot.ρ))
+        @assert all(s ∈ (sign_Ip, 0.0) for s in signs) error_text("Jt_R", shot.Jt_R.(shot.ρ))
     elseif shot.Jt !== nothing
-        @assert all(sign(shot.Jt(x)) ∈ (sign_Ip, 0.0) for x in shot.ρ) error_text("Jt")
+        signs = sign.(shot.Jt.(shot.ρ))
+        @assert all(s ∈ (sign_Ip, 0.0) for s in signs) error_text("Jt", shot.Jt.(shot.ρ))
     else
         invR2 = FE_rep(shot, fsa_invR2)
         Pp = Pprime(shot, shot.P, shot.dP_dψ)

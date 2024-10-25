@@ -128,7 +128,7 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0, debu
         end
 
     end
-    warn_concentric && println("WARNING: Final iteration used concentric surfaces and is likely inaccurate")
+    warn_concentric && @warn("Final iteration used concentric surfaces and is likely inaccurate")
     return refill
 end
 

@@ -18,7 +18,7 @@ end
 
 makedocs(;
     modules=[TEQUILA],
-    format=Documenter.HTML(),
+    format=Documenter.HTML(;analytics="G-65D8V8C8VQ"),
     sitename="TEQUILA",
     checkdocs=:none,
     pages=["index.md", "api.md", "License" => "license.md", "Notice" => "notice.md"],

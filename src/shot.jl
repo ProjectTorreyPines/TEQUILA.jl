@@ -674,7 +674,7 @@ end
 
 # TEQUILA I/O
 save_shot(shot::Shot, filename::String="shot.bson") = BSON.bson(filename, Dict(:shot => shot))
-load_shot(filename::String="shot.bson") = BSON.load(filename)[:shot]
+load_shot(filename::String="shot.bson") = BSON.load(filename, @__MODULE__)[:shot]
 
 # Implement AbstractEquilibrium interface
 # This assume it's converged, so the inner flux surface is the axis

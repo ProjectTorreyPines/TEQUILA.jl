@@ -51,7 +51,7 @@ function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real,
     end
     @NLobjective(model, Max, Zloc(ρ, θ))
     JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
+    @assert termination_status(model) in jump_success "$termination_status(model)"
     ρ_Zmax = value(ρ)
     θ_Zmax = value(θ)
 
@@ -72,7 +72,7 @@ function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real,
     end
     @NLobjective(model, Min, Zloc(ρ, θ))
     JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
+    @assert termination_status(model) in jump_success "$termination_status(model)"
     ρ_Zmin = value(ρ)
     θ_Zmin = value(θ)
 
@@ -93,7 +93,12 @@ function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real,
     end
     @NLobjective(model, Max, Rloc(ρ, θ))
     JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
+    if !(termination_status(model) in jump_success)
+        @show termination_status(model), JuMP.time_limit_sec(model)
+        plot(shot, :ρθ)
+        display(scatter!([0.0], [ρguess]))
+        error("Failed to find Rmax")
+    end
     ρ_Rmax = value(ρ)
     θ_Rmax = value(θ)
 
@@ -114,7 +119,7 @@ function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real,
     end
     @NLobjective(model, Min, Rloc(ρ, θ))
     JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
+    @assert termination_status(model) in jump_success "$termination_status(model)"
     ρ_Rmin = value(ρ)
     θ_Rmin = value(θ)
 
@@ -155,7 +160,7 @@ function find_extrema_RZ(shot, level::Real, Raxis::Real, Zaxis::Real)
     set_start_value(Z, Zaxis)
     @objective(model, Max, Z)
     JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
+    @assert termination_status(model) in jump_success "$termination_status(model)"
     R_at_Zmax = value(R)
     Zmax = value(Z)
 
@@ -168,7 +173,7 @@ function find_extrema_RZ(shot, level::Real, Raxis::Real, Zaxis::Real)
     set_start_value(Z, Zaxis)
     @objective(model, Min, Z)
     JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
+    @assert termination_status(model) in jump_success "$termination_status(model)"
     R_at_Zmin = value(R)
     Zmin = value(Z)
 
@@ -181,7 +186,7 @@ function find_extrema_RZ(shot, level::Real, Raxis::Real, Zaxis::Real)
     set_start_value(Z, Zaxis)
     @objective(model, Max, R)
     JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
+    @assert termination_status(model) in jump_success "$termination_status(model)"
     Rmax = value(R)
     Z_at_Rmax = value(Z)
 
@@ -194,7 +199,7 @@ function find_extrema_RZ(shot, level::Real, Raxis::Real, Zaxis::Real)
     set_start_value(Z, Zaxis)
     @objective(model, Min, R)
     JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
+    @assert termination_status(model) in jump_success "$termination_status(model)"
     Rmin = value(R)
     Z_at_Rmin = value(Z)
 
@@ -347,6 +352,7 @@ function refit!(shot::Shot, Ψaxis::Real, Raxis::Real, Zaxis::Real; debug::Bool=
     try
         surfaces, flat_δ2, flat_δ3 = fitted_surfaces(shot, Ψaxis, Raxis, Zaxis)
     catch err
+        display(plot(shot, :ρθ))
         (isa(err, InterruptException) || !fit_fallback) && rethrow(err)
         warn_concentric = true
         if debug

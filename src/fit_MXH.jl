@@ -15,12 +15,26 @@ end
 function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real, ρaxis::Real; algorithm::Symbol=:LD_SLSQP)
     model = Model(NLopt.Optimizer; add_bridges=false)
     set_optimizer_attribute(model, "algorithm", algorithm)
-    set_optimizer_attribute(model, "maxtime", 10.0)
+    set_optimizer_attribute(model, "maxtime", 1.0)
+    #set_optimizer_attribute(model, "constrtol_abs", 1e-5)
+    #set_optimizer_attribute(model, "ftol_abs", 1e-12)
+    #@show get_optimizer_attribute(model, "ftol_rel")
     @variable(model, ρ)
     @variable(model, θ)
 
-    register(model, :psi, 2, (r, t) -> psi_ρθ(shot, r, t); autodiff=true)
+    psi = (r, t) -> psi_ρθ(shot, r, t)
+    function ∇psi(g, r, t)
+        g[1] = TEQUILA.dpsi_dρ(shot, r, t)
+        g[2] = TEQUILA.dpsi_dθ(shot, r, t)
+        return
+    end
+    register(model, :psi, 2, psi, ∇psi)
     @NLconstraint(model, psi(ρ, θ) == level)
+
+    # psitol = abs(1e-3 * Ψaxis / shot.N)
+
+    # @NLconstraint(model, -psitol <= (psi(ρ, θ) - level))
+    # @NLconstraint(model, (psi(ρ, θ) - level) <= psitol)
 
     ρguess = sqrt(1 - level / Ψaxis)
     aguess = ρguess * shot.surfaces[1, end] * shot.surfaces[2, end]
@@ -29,10 +43,36 @@ function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real,
     set_lower_bound(ρ, 1e-8) #avoid singularity on-axis
     set_upper_bound(ρ, 1.0)
 
+    function Rloc_debug(r, t)
+        R = TEQUILA.R(shot, r, t)
+        if r isa Float64
+            println("  $r\t$t\t$R")
+        end
+        return R
+    end
     Rloc = (r, t) -> TEQUILA.R(shot, r, t)
+    function ∇Rloc(g, r, t)
+        g[1] = TEQUILA.dR_dρ(shot, r, t)
+        g[2] = TEQUILA.dR_dθ(shot, r, t)
+        return
+    end
+    function ∇Rloc_debug(g, r, t)
+        g[1] = TEQUILA.dR_dρ(shot, r, t)
+        g[2] = TEQUILA.dR_dθ(shot, r, t)
+        @show g
+        return
+    end
     Zloc = (r, t) -> TEQUILA.Z(shot, r, t)
-    register(model, :Rloc, 2, Rloc; autodiff=true)
-    register(model, :Zloc, 2, Zloc; autodiff=true)
+    function ∇Zloc(g, r, t)
+        g[1] = TEQUILA.dZ_dρ(shot, r, t)
+        g[2] = TEQUILA.dZ_dθ(shot, r, t)
+        return
+    end
+    register(model, :Rloc_debug, 2, Rloc_debug, ∇Rloc)
+    register(model, :Rloc, 2, Rloc, ∇Rloc)
+    register(model, :Zloc, 2, Zloc, ∇Zloc)
+    #register(model, :Rloc, 2, Rloc; autodiff=true)
+    #register(model, :Zloc, 2, Zloc; autodiff=true)
 
     # Zmax
     if ρguess < 2ρaxis
@@ -51,7 +91,7 @@ function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real,
     end
     @NLobjective(model, Max, Zloc(ρ, θ))
     JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
+    @assert termination_status(model) in jump_success "$termination_status(model)"
     ρ_Zmax = value(ρ)
     θ_Zmax = value(θ)
 
@@ -72,7 +112,7 @@ function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real,
     end
     @NLobjective(model, Min, Zloc(ρ, θ))
     JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
+    @assert termination_status(model) in jump_success "$termination_status(model)"
     ρ_Zmin = value(ρ)
     θ_Zmin = value(θ)
 
@@ -93,7 +133,19 @@ function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real,
     end
     @NLobjective(model, Max, Rloc(ρ, θ))
     JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
+    min_f, ret = objective_value(model), raw_status(model)
+    # println(
+    #     """
+    #     objective value       : $min_f
+    #     solution status       : $ret
+    #     """
+    # )
+    if !(termination_status(model) in jump_success)
+        @show termination_status(model), JuMP.time_limit_sec(model)
+        plot(shot, :ρθ)
+        display(scatter!([0.0], [ρguess]))
+        error("Failed to find Rmax")
+    end
     ρ_Rmax = value(ρ)
     θ_Rmax = value(θ)
 
@@ -114,7 +166,7 @@ function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real,
     end
     @NLobjective(model, Min, Rloc(ρ, θ))
     JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
+    @assert termination_status(model) in jump_success "$termination_status(model)"
     ρ_Rmin = value(ρ)
     θ_Rmin = value(θ)
 
@@ -155,7 +207,7 @@ function find_extrema_RZ(shot, level::Real, Raxis::Real, Zaxis::Real)
     set_start_value(Z, Zaxis)
     @objective(model, Max, Z)
     JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
+    @assert termination_status(model) in jump_success "$termination_status(model)"
     R_at_Zmax = value(R)
     Zmax = value(Z)
 
@@ -168,7 +220,7 @@ function find_extrema_RZ(shot, level::Real, Raxis::Real, Zaxis::Real)
     set_start_value(Z, Zaxis)
     @objective(model, Min, Z)
     JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
+    @assert termination_status(model) in jump_success "$termination_status(model)"
     R_at_Zmin = value(R)
     Zmin = value(Z)
 
@@ -181,7 +233,7 @@ function find_extrema_RZ(shot, level::Real, Raxis::Real, Zaxis::Real)
     set_start_value(Z, Zaxis)
     @objective(model, Max, R)
     JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
+    @assert termination_status(model) in jump_success "$termination_status(model)"
     Rmax = value(R)
     Z_at_Rmax = value(Z)
 
@@ -194,7 +246,7 @@ function find_extrema_RZ(shot, level::Real, Raxis::Real, Zaxis::Real)
     set_start_value(Z, Zaxis)
     @objective(model, Min, R)
     JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
+    @assert termination_status(model) in jump_success "$termination_status(model)"
     Rmin = value(R)
     Z_at_Rmin = value(Z)
 
@@ -347,6 +399,7 @@ function refit!(shot::Shot, Ψaxis::Real, Raxis::Real, Zaxis::Real; debug::Bool=
     try
         surfaces, flat_δ2, flat_δ3 = fitted_surfaces(shot, Ψaxis, Raxis, Zaxis)
     catch err
+        display(plot(shot, :ρθ))
         (isa(err, InterruptException) || !fit_fallback) && rethrow(err)
         warn_concentric = true
         if debug

@@ -12,15 +12,23 @@ function residual_extrema(shot, lvl, Rmax, Z_at_Rmax, Rmin, Z_at_Rmin, R_at_Zmax
     return sqrt(res / lvl^2)
 end
 
+const nlopt_optimizer = NLopt.Optimizer
 function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real, ρaxis::Real; algorithm::Symbol=:LD_SLSQP)
-    model = Model(NLopt.Optimizer; add_bridges=false)
+    model = Model(nlopt_optimizer)
     set_optimizer_attribute(model, "algorithm", algorithm)
     set_optimizer_attribute(model, "maxtime", 10.0)
     @variable(model, ρ)
     @variable(model, θ)
 
-    register(model, :psi, 2, (r, t) -> psi_ρθ(shot, r, t); autodiff=true)
-    @NLconstraint(model, psi(ρ, θ) == level)
+    Rloc = (r, t) -> TEQUILA.R(shot, r, t)
+    Zloc = (r, t) -> TEQUILA.Z(shot, r, t)
+    #@operator(model, Rloc, 2, Rloc_fn)
+    #@operator(model, Zloc, 2, Zloc_fn)
+
+    psi = (r, t) -> psi_ρθ(shot, r, t)
+    #@operator(model, op_psi, 2,  psi_fn)
+
+    @constraint(model, psi(ρ, θ) == level)
 
     ρguess = sqrt(1 - level / Ψaxis)
     aguess = ρguess * shot.surfaces[1, end] * shot.surfaces[2, end]
@@ -28,11 +36,6 @@ function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real,
 
     set_lower_bound(ρ, 1e-8) #avoid singularity on-axis
     set_upper_bound(ρ, 1.0)
-
-    Rloc = (r, t) -> TEQUILA.R(shot, r, t)
-    Zloc = (r, t) -> TEQUILA.Z(shot, r, t)
-    register(model, :Rloc, 2, Rloc; autodiff=true)
-    register(model, :Zloc, 2, Zloc; autodiff=true)
 
     # Zmax
     if ρguess < 2ρaxis
@@ -49,9 +52,9 @@ function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real,
         set_upper_bound(θ, 1.5 * π)
         set_start_value(θ, -0.5 * π)
     end
-    @NLobjective(model, Max, Zloc(ρ, θ))
+    @objective(model, Max, Zloc(ρ, θ))
     JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
+    JuMP.assert_is_solved_and_feasible(model)
     ρ_Zmax = value(ρ)
     θ_Zmax = value(θ)
 
@@ -70,9 +73,9 @@ function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real,
         set_upper_bound(θ, 2.5 * π)
         set_start_value(θ, 0.5 * π)
     end
-    @NLobjective(model, Min, Zloc(ρ, θ))
+    @objective(model, Min, Zloc(ρ, θ))
     JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
+    JuMP.assert_is_solved_and_feasible(model)
     ρ_Zmin = value(ρ)
     θ_Zmin = value(θ)
 
@@ -91,9 +94,9 @@ function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real,
         set_upper_bound(θ, twopi)
         set_start_value(θ, 0.0)
     end
-    @NLobjective(model, Max, Rloc(ρ, θ))
+    @objective(model, Max, Rloc(ρ, θ))
     JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
+    JuMP.assert_is_solved_and_feasible(model)
     ρ_Rmax = value(ρ)
     θ_Rmax = value(θ)
 
@@ -112,9 +115,9 @@ function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real,
         set_upper_bound(θ, 3π)
         set_start_value(θ, π)
     end
-    @NLobjective(model, Min, Rloc(ρ, θ))
+    @objective(model, Min, Rloc(ρ, θ))
     JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
+    JuMP.assert_is_solved_and_feasible(model)
     ρ_Rmin = value(ρ)
     θ_Rmin = value(θ)
 

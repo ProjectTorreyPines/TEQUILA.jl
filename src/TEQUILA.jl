@@ -18,6 +18,7 @@ import NLopt
 import BSON
 using LinearSolve
 import ForwardDiff
+using Plots
 
 const halfpi = 0.5 * π
 const twopi = 2π

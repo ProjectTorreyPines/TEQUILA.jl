@@ -1,18 +1,22 @@
 function fft_prealloc(M::Integer)
-    tmp = zeros(2M + 4)
-    Fi = complex(tmp)
-    dFi = complex(tmp)
-    Fo = complex(tmp)
+    Fi  = zeros(ComplexF64, 2M + 4)
+    dFi = zeros(ComplexF64, 2M + 4)
+    Fo  = zeros(ComplexF64, 2M + 4)
     P = plan_fft(Fi)
     return Fi, dFi, Fo, P
 end
 
 function fft_prealloc_threaded(M::Integer)
-    tmp = zeros(2M + 4)
-    Fis = [complex(tmp) for _ in 1:Threads.nthreads()]
-    dFis = [complex(tmp) for _ in 1:Threads.nthreads()]
-    Fos = [complex(tmp) for _ in 1:Threads.nthreads()]
-    Ps = [plan_fft(complex(tmp)) for _ in 1:Threads.nthreads()]
+    Fi_template = zeros(ComplexF64, 2M + 4)
+    dFi_template = zeros(ComplexF64, 2M + 4)
+    Fo_template = zeros(ComplexF64, 2M + 4)
+    P_init = () -> plan_fft(Fi_template)
+
+    Fis = preallocate_buffer(Fi_template)
+    dFis = preallocate_buffer(dFi_template)
+    Fos = preallocate_buffer(Fo_template)
+    Ps = preallocate_buffer(P_init)
+
     return Fis, dFis, Fos, Ps
 end
 

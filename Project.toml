@@ -1,13 +1,14 @@
 name = "TEQUILA"
 uuid = "a60c9cbd-e72f-4185-96b6-b8fc312c4d37"
-authors = ["Brendan C. Lyons <bclyons12@gmail.com> and contributors"]
 version = "1.1.7"
+authors = ["Brendan C. Lyons <bclyons12@gmail.com> and contributors"]
 
 [deps]
 BSON = "fbb218c0-5317-5bc6-957e-2ee96dd4b1f0"
 FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
 FiniteElementHermite = "6ce10167-d368-4c0e-af34-9787cdd175e5"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+IMASutils = "b8e4ee59-9bed-3a6a-a553-8dd24d6374ad"
 JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 LinearSolve = "7ed4a6bd-45f5-4d41-b270-4a48e9bafcae"
@@ -28,6 +29,7 @@ BSON = "0.3"
 FFTW = "1"
 FiniteElementHermite = "1"
 ForwardDiff = "0.10, 1"
+IMASutils = "1.6.0"
 JuMP = "1"
 LinearSolve = "2, 3"
 MXHEquilibrium = "1.0.1"

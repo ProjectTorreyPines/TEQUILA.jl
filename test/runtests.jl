@@ -19,7 +19,6 @@ const psi_fe = TEQUILA.FE(x, (x .^ 2) .- 2.0)
     @test Shot(11, 5, 6, (@__DIR__) * "/g_chease_mxh_d3d") isa Shot
     shot = Shot(11, 11, bnd, psi_fe; P=(P, :toroidal), Jt_R=(J, :toroidal), Pbnd, Fbnd, Ip_target)
     @test solve(shot, 5) isa Shot
-    refill = solve(shot, 21; relax=0.5, tol=1e-3, debug=true, dP_dψ=(Pp, :toroidal), Jt=(J, :toroidal))
-    @test refill isa Shot
+    @test solve(shot, 21; relax=0.5, tol=1e-3, debug=true, dP_dψ=(Pp, :toroidal), Jt=(J, :toroidal), concentric_last=:error) isa Shot
     @test isapprox(shot.Ip_target, Ip(refill); rtol=1e-2)
 end

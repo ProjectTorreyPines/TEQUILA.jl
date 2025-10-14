@@ -369,11 +369,10 @@ function Shot(
     Ip_target::Union{Nothing,Real}=nothing
 )
     L = length(cfe)
-    init = () -> DiffCache(zeros(L))
-    cx = preallocate_buffer(init)
-    sx = preallocate_buffer(init)
-    dcx = preallocate_buffer(init)
-    dsx = preallocate_buffer(init)
+    cx  = TaskLocalValue(() -> DiffCache(zeros(L)))
+    sx  = TaskLocalValue(() -> DiffCache(zeros(L)))
+    dcx = TaskLocalValue(() -> DiffCache(zeros(L)))
+    dsx = TaskLocalValue(() -> DiffCache(zeros(L)))
     Afac = factorize(mass_matrix(N, ρ))
     MP = prof -> make_profile(prof, ρtor)
     return Shot(N, M, ρ, surfaces, C, MP(P), MP(dP_dψ), MP(F_dF_dψ), MP(Jt_R), MP(Jt), Pbnd, Fbnd, Ip_target,
@@ -757,17 +756,10 @@ function MXHEquilibrium.psi_gradient(shot::Shot, R, Z)
 
     k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = bases_Dbases
 
-    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    R0x, ϵx, κx, c0x = evaluate_inbounds((shot.R0fe, shot.ϵfe, shot.κfe, shot.c0fe), k, nu_ou, nu_eu, nu_ol, nu_el)
     cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
 
-    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dR0x, dZ0x, dϵx, dκx, dc0x = evaluate_inbounds((shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe), k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
 
     R_ρ = MillerExtendedHarmonic.dR_dρ(θ, R0x, ϵx, c0x, cx, sx, dR0x, dϵx, dc0x, dcx, dsx)

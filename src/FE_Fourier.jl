@@ -20,6 +20,15 @@ function fft_prealloc_threaded(M::Integer)
     return Fis, dFis, Fos, Ps
 end
 
+function fft_prealloc_threadlocal(M::Integer)
+    Fis  = TaskLocalValue{Vector{ComplexF64}}(() -> zeros(ComplexF64, 2M + 4))
+    dFis = TaskLocalValue{Vector{ComplexF64}}(() -> zeros(ComplexF64, 2M + 4))
+    Fos  = TaskLocalValue{Vector{ComplexF64}}(() -> zeros(ComplexF64, 2M + 4))
+    Ps   = TaskLocalValue(() -> plan_fft(zeros(ComplexF64, 2M + 4)))
+
+    return Fis, dFis, Fos, Ps
+end
+
 function fourier_decompose!(
     CS::AbstractVector{<:Real},
     f::F1,

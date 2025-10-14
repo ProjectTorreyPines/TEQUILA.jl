@@ -362,7 +362,7 @@ end
 
 function fitted_surfaces(shot, Ψaxis, Raxis, Zaxis)
     L = length(shot.cfe)
-    Fis, _, Fos, Ps = fft_prealloc_threaded(L)
+    Fis, _, Fos, Ps = fft_prealloc_threadlocal(L)
 
     surfaces = deepcopy(shot.surfaces)
 
@@ -372,10 +372,11 @@ function fitted_surfaces(shot, Ψaxis, Raxis, Zaxis)
     #Threads.@threads
     for k in 2:(shot.N-1)
         lvl = Ψaxis * (1.0 - shot.ρ[k]^2)
-        with_buffers(Fis, Fos, Ps) do Fi, Fo, P
-            @views flat = surfaces[:, k]
-            fit_MXH!(flat, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fi, Fo, P)
-        end
+        Fi = Fis[]
+        Fo = Fos[]
+        P = Ps[]
+        @views flat = surfaces[:, k]
+        fit_MXH!(flat, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fi, Fo, P)
     end
 
     # Now fit two more surfaces in the last grid region so we can update derivatives
@@ -386,13 +387,15 @@ function fitted_surfaces(shot, Ψaxis, Raxis, Zaxis)
     flat_δ3 = zeros(2L + 5)
     ρ_δ3 = shot.ρ[end-1] + δ_frac_3 * δρ
 
-    with_buffers(Fis, Fos, Ps) do Fi, Fo, P
-        lvl = Ψaxis * (1.0 - ρ_δ2^2)
-        fit_MXH!(flat_δ2, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fi, Fo, P)
+    Fi = Fis[]
+    Fo = Fos[]
+    P = Ps[]
 
-        lvl = Ψaxis * (1.0 - ρ_δ3^2)
-        fit_MXH!(flat_δ3, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fi, Fo, P)
-    end
+    lvl = Ψaxis * (1.0 - ρ_δ2^2)
+    fit_MXH!(flat_δ2, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fi, Fo, P)
+
+    lvl = Ψaxis * (1.0 - ρ_δ3^2)
+    fit_MXH!(flat_δ3, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fi, Fo, P)
 
     # Extrapolate or set to zero on-axis
     ρ2 = shot.ρ[2]

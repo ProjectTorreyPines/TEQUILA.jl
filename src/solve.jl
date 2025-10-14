@@ -72,7 +72,7 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0, debu
     I_c = Ip(refill)
     validate_current(refill; I_c)
 
-    Fis, dFis, Fos, Ps = fft_prealloc_threaded(refill.M)
+    Fis, dFis, Fos, Ps = fft_prealloc_threadlocal(refill.M)
     A = preallocate_Astar(refill)
     L = 2 * refill.N * (2 * refill.M + 1)
     B = zeros(L)

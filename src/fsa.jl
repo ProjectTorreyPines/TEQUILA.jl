@@ -44,17 +44,11 @@ Compute dV/dρ at `ρ` for the equilibrium defined in `shot`
 """
 function Vprime(shot::F1, ρ::Real) where {F1<:Shot}
     k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
-    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
 
-    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    R0x, ϵx, κx, c0x = evaluate_inbounds((shot.R0fe, shot.ϵfe, shot.κfe, shot.c0fe), k, nu_ou, nu_eu, nu_ol, nu_el)
+    cx, sx = evaluate_csx!(shot._cx, shot._sx, shot.cfe, shot.sfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+
+    dR0x, dZ0x, dϵx, dκx, dc0x = evaluate_inbounds((shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe), k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
 
     J = θ -> MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx)
@@ -72,17 +66,10 @@ function FSA(f::F1, shot::F2, ρ::Real) where {F1,F2<:Shot}
     ρ == 0.0 && return f(0.0)
 
     k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
-    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+    R0x, ϵx, κx, c0x = evaluate_inbounds((shot.R0fe, shot.ϵfe, shot.κfe, shot.c0fe), k, nu_ou, nu_eu, nu_ol, nu_el)
+    cx, sx = evaluate_csx!(shot._cx, shot._sx, shot.cfe, shot.sfe, k, nu_ou, nu_eu, nu_ol, nu_el)
 
-    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dR0x, dZ0x, dϵx, dκx, dc0x = evaluate_inbounds((shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe), k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
 
     J = θ -> MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx)
@@ -101,17 +88,10 @@ function FSA(f::F1, shot::F2, ρ::Real, Vprime::F3) where {F1,F2<:Shot,F3<:FE_re
     ρ == 0.0 && return f(0.0)
 
     k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
-    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+    R0x, ϵx, κx, c0x = evaluate_inbounds((shot.R0fe, shot.ϵfe, shot.κfe, shot.c0fe), k, nu_ou, nu_eu, nu_ol, nu_el)
+    cx, sx = evaluate_csx!(shot._cx, shot._sx, shot.cfe, shot.sfe, k, nu_ou, nu_eu, nu_ol, nu_el)
 
-    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dR0x, dZ0x, dϵx, dκx, dc0x = evaluate_inbounds((shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe), k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
 
     Vp = evaluate_inbounds(Vprime, k, nu_ou, nu_eu, nu_ol, nu_el)
@@ -132,17 +112,10 @@ function FSA(f::F1, shot::F2, ρ::Real, Vprime::Real) where {F1,F2<:Shot}
     ρ == 0.0 && return f(0.0)
 
     k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
-    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+    R0x, ϵx, κx, c0x = evaluate_inbounds((shot.R0fe, shot.ϵfe, shot.κfe, shot.c0fe), k, nu_ou, nu_eu, nu_ol, nu_el)
+    cx, sx = evaluate_csx!(shot._cx, shot._sx, shot.cfe, shot.sfe, k, nu_ou, nu_eu, nu_ol, nu_el)
 
-    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dR0x, dZ0x, dϵx, dκx, dc0x = evaluate_inbounds((shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe), k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
 
     Jf = θ -> f(θ) * MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx)
@@ -156,10 +129,8 @@ Compute <R⁻²> at `ρ` for the equilibrium defined in `shot`
 """
 function fsa_invR2(shot::F1, ρ) where {F1<:Shot}
     k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
-    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+    R0x, ϵx, c0x = evaluate_inbounds((shot.R0fe, shot.ϵfe, shot.c0fe), k, nu_ou, nu_eu, nu_ol, nu_el)
+    cx, sx = evaluate_csx!(shot._cx, shot._sx, shot.cfe, shot.sfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ax = R0x * ϵx
 
     f = θ -> MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, cx, sx, ax)^-2
@@ -174,10 +145,8 @@ Compute <R⁻¹> at `ρ` for the equilibrium defined in `shot`
 """
 function fsa_invR(shot::F1, ρ) where {F1<:Shot}
     k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
-    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+    R0x, ϵx, c0x = evaluate_inbounds((shot.R0fe, shot.ϵfe, shot.c0fe), k, nu_ou, nu_eu, nu_ol, nu_el)
+    cx, sx = evaluate_csx!(shot._cx, shot._sx, shot.cfe, shot.sfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ax = R0x * ϵx
 
     f = θ -> MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, cx, sx, ax)^-1
@@ -259,18 +228,11 @@ end
 
 function _int_J_invR2(shot::F1, ρ::Real) where {F1<:Shot}
     k, nu_ou, nu_eu, nu_ol, nu_el, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_both_bases(shot.ρ, ρ)
-    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
+    R0x, ϵx, κx, c0x = evaluate_inbounds((shot.R0fe, shot.ϵfe, shot.κfe, shot.c0fe), k, nu_ou, nu_eu, nu_ol, nu_el)
+    cx, sx = evaluate_csx!(shot._cx, shot._sx, shot.cfe, shot.sfe, k, nu_ou, nu_eu, nu_ol, nu_el)
     ax = R0x * ϵx
 
-    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dR0x, dZ0x, dϵx, dκx, dc0x = evaluate_inbounds((shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe), k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
 
     J_invR2 = θ -> (MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx) * MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, cx, sx, ax)^-2)

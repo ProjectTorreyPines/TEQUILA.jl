@@ -32,6 +32,9 @@ const int_order = 5
 const δ_frac_2 = 0.5
 const δ_frac_3 = 0.75
 
+# For threading: use maxthreadid if available (e.g., Julia v1.12) nthreads() otherwise
+nbuffers() = isdefined(Threads, :maxthreadid) ? Threads.maxthreadid() : Threads.nthreads()
+
 mutable struct QuadInfo{
     VR1<:AbstractVector{<:Real},
     VSV1<:Vector{<:AbstractSparseVector},

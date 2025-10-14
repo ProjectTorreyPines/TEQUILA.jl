@@ -369,10 +369,10 @@ function Shot(
     Ip_target::Union{Nothing,Real}=nothing
 )
     L = length(cfe)
-    cx = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
-    sx = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
-    dcx = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
-    dsx = [DiffCache(zeros(L)) for _ in 1:Threads.nthreads()]
+    cx = [DiffCache(zeros(L)) for _ in 1:nbuffers()]
+    sx = [DiffCache(zeros(L)) for _ in 1:nbuffers()]
+    dcx = [DiffCache(zeros(L)) for _ in 1:nbuffers()]
+    dsx = [DiffCache(zeros(L)) for _ in 1:nbuffers()]
     Afac = factorize(mass_matrix(N, ρ))
     MP = prof -> make_profile(prof, ρtor)
     return Shot(N, M, ρ, surfaces, C, MP(P), MP(dP_dψ), MP(F_dF_dψ), MP(Jt_R), MP(Jt), Pbnd, Fbnd, Ip_target,

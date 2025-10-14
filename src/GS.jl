@@ -111,10 +111,13 @@ function define_Astar!(Astar, shot, Fis, dFis, Fos, Ps)
     Astar.nzval .= 0.0
 
     # Loop over columns of
-    #Threads.@threads
+    #Threads.@threads # I think this is thread-safe, but will withhold for now
     for m in 0:shot.M
-        tid = Threads.threadid()
-        define_Acol!(Astar, m, shot, Fis[tid], dFis[tid], Fos[tid], Ps[tid])
+        Fi = Fis[]
+        dFi = dFis[]
+        Fo = Fos[]
+        P = Ps[]
+        define_Acol!(Astar, m, shot, Fi, dFi, Fo, P)
     end
     # flip sign since all above terms were integrated by parts
     #Astar.nzval .*= -1.0
@@ -272,7 +275,7 @@ function define_Acol!(Astar, m, shot, Fi, dFi, Fo, P)
 
 end
 
-function define_B!(B, shot, Fis::Vector{<:AbstractVector{<:Complex}}, Fos::Vector{<:AbstractVector{<:Complex}}, Ps::Vector{<:FFTW.FFTWPlan})
+function define_B!(B, shot, Fis, Fos, Ps)
     N = shot.N
     M = shot.M
 
@@ -286,7 +289,7 @@ function define_B!(B, shot, Fis::Vector{<:AbstractVector{<:Complex}}, Fos::Vecto
     rhs(x, t) = RHS(shot, x, t, invR, invR2, shot.Q)
 
     # Loop over columns of
-    #Threads.@threads
+    #Threads.@threads # unsafe: why?
     for j in 1:N
 
         je = 2j
@@ -297,9 +300,11 @@ function define_B!(B, shot, Fis::Vector{<:AbstractVector{<:Complex}}, Fos::Vecto
         Jos = Jo .+ mrange
         Jes = Je .+ mrange
 
-        tid = Threads.threadid()
-        @views θFD_ρIP_f_nu!(B[Jos], rhs, :odd, j, M, Fis[tid], Fos[tid], Ps[tid], shot.Q)
-        @views θFD_ρIP_f_nu!(B[Jes], rhs, :even, j, M, Fis[tid], Fos[tid], Ps[tid], shot.Q)
+        Fi = Fis[]
+        Fo = Fos[]
+        P = Ps[]
+        @views θFD_ρIP_f_nu!(B[Jos], rhs, :odd, j, M, Fi, Fo, P, shot.Q)
+        @views θFD_ρIP_f_nu!(B[Jes], rhs, :even, j, M, Fi, Fo, P, shot.Q)
 
     end
     return
@@ -330,22 +335,15 @@ function RHS(shot::Shot, ρ::Real, θ::Real, invR, invR2, Q::QuadInfo)
     end
 end
 
-function RHS_pp_ffp(shot::Shot, ρ::Real, θ::Real, dP_dψ::Real, F_dF_dψ::Real, Q::QuadInfo; tid=Threads.threadid())
+function RHS_pp_ffp(shot::Shot, ρ::Real, θ::Real, dP_dψ::Real, F_dF_dψ::Real, Q::QuadInfo)
     k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
-    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
+    R0x, ϵx, κx, c0x = evaluate_inbounds((shot.R0fe, shot.ϵfe, shot.κfe, shot.c0fe), k, nu_ou, nu_eu, nu_ol, nu_el)
+    cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
     ax = R0x * ϵx
 
     k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_D_bases(shot.ρ, ρ)
-    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
+    dR0x, dZ0x, dϵx, dκx, dc0x = evaluate_inbounds((shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe), k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
 
     J = MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx, Q.Fsin, Q.Fcos)
     R = MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, cx, sx, ax, Q.Fsin, Q.Fcos)
@@ -356,22 +354,15 @@ function RHS_pp_ffp(shot::Shot, ρ::Real, θ::Real, dP_dψ::Real, F_dF_dψ::Real
     return -twopi^2 * (pterm + ffterm)
 end
 
-function RHS_pp_jt(shot::Shot, ρ::Real, θ::Real, dP_dψ::Real, JtoR::Real, iR2::Real, Q::QuadInfo; tid=Threads.threadid())
+function RHS_pp_jt(shot::Shot, ρ::Real, θ::Real, dP_dψ::Real, JtoR::Real, iR2::Real, Q::QuadInfo)
     k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(shot.ρ, ρ)
-    R0x = evaluate_inbounds(shot.R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    ϵx = evaluate_inbounds(shot.ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    κx = evaluate_inbounds(shot.κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    c0x = evaluate_inbounds(shot.c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
+    R0x, ϵx, κx, c0x = evaluate_inbounds((shot.R0fe, shot.ϵfe, shot.κfe, shot.c0fe), k, nu_ou, nu_eu, nu_ol, nu_el)
+    cx, sx = evaluate_csx!(shot, k, nu_ou, nu_eu, nu_ol, nu_el)
     ax = R0x * ϵx
 
     k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el = compute_D_bases(shot.ρ, ρ)
-    dR0x = evaluate_inbounds(shot.R0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dZ0x = evaluate_inbounds(shot.Z0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dϵx = evaluate_inbounds(shot.ϵfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dκx = evaluate_inbounds(shot.κfe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dc0x = evaluate_inbounds(shot.c0fe, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
-    dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid)
+    dR0x, dZ0x, dϵx, dκx, dc0x = evaluate_inbounds((shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe), k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
+    dcx, dsx = evaluate_dcsx!(shot, k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     J = MillerExtendedHarmonic.Jacobian(θ, R0x, ϵx, κx, c0x, cx, sx, dR0x, dZ0x, dϵx, dκx, dc0x, dcx, dsx, Q.Fsin, Q.Fcos)
     R = MillerExtendedHarmonic.R_MXH(θ, R0x, c0x, cx, sx, ax)
 

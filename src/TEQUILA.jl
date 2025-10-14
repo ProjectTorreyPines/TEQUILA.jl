@@ -18,6 +18,8 @@ import NLopt
 import BSON
 using LinearSolve
 import ForwardDiff
+using OhMyThreads: TaskLocalValue
+import IMASutils: preallocate_buffer, with_buffer, with_buffers
 
 const halfpi = 0.5 * π
 const twopi = 2π
@@ -100,7 +102,7 @@ const ProfType = Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}
         FE1<:FE_rep,
         VFE1<:AbstractVector{<:FE_rep},
         Q1<:QuadInfo,
-        VDC1<:Vector{<:DiffCache},
+        CDC1<:Channel{<:DiffCache},
         F1<:Factorization
     } <: AbstractEquilibrium
 
@@ -125,7 +127,7 @@ mutable struct Shot{
     FE1<:FE_rep,
     VFE1<:AbstractVector{<:FE_rep},
     Q1<:QuadInfo,
-    VDC1<:Vector{<:DiffCache},
+    DC1<:DiffCache,
     F1<:Factorization
 } <: AbstractEquilibrium
     N::I1
@@ -154,10 +156,10 @@ mutable struct Shot{
     invR2::FE1
     F::FE1
     ρtor::FE1
-    _cx::VDC1
-    _sx::VDC1
-    _dcx::VDC1
-    _dsx::VDC1
+    _cx::TaskLocalValue{DC1}
+    _sx::TaskLocalValue{DC1}
+    _dcx::TaskLocalValue{DC1}
+    _dsx::TaskLocalValue{DC1}
     _Afac::F1
 end
 

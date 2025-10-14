@@ -362,36 +362,40 @@ end
 
 function fitted_surfaces(shot, Ψaxis, Raxis, Zaxis)
     L = length(shot.cfe)
-    Fis, _, Fos, Ps = fft_prealloc_threaded(L)
+    Fis, _, Fos, Ps = fft_prealloc_threadlocal(L)
 
     surfaces = deepcopy(shot.surfaces)
 
     ρaxis, _ = ρθ_RZ(shot, Raxis, Zaxis)
+
+    # BCL 10/10/2025: multithreading still broken here
     #Threads.@threads
-    # multithreading is broken here somehow. Maybe the tid pattern?
     for k in 2:(shot.N-1)
         lvl = Ψaxis * (1.0 - shot.ρ[k]^2)
-        tid = Threads.threadid()
-        Fi = Fis[tid]
-        Fo = Fos[tid]
-        P = Ps[tid]
+        Fi = Fis[]
+        Fo = Fos[]
+        P = Ps[]
         @views flat = surfaces[:, k]
         fit_MXH!(flat, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fi, Fo, P)
     end
 
     # Now fit two more surfaces in the last grid region so we can update derivatives
-    tid = Threads.threadid()
     δρ = shot.ρ[end] - shot.ρ[end-1]
 
     flat_δ2 = zeros(2L + 5)
     ρ_δ2 = shot.ρ[end-1] + δ_frac_2 * δρ
-    lvl = Ψaxis * (1.0 - ρ_δ2^2)
-    fit_MXH!(flat_δ2, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fis[tid], Fos[tid], Ps[tid])
-
     flat_δ3 = zeros(2L + 5)
     ρ_δ3 = shot.ρ[end-1] + δ_frac_3 * δρ
+
+    Fi = Fis[]
+    Fo = Fos[]
+    P = Ps[]
+
+    lvl = Ψaxis * (1.0 - ρ_δ2^2)
+    fit_MXH!(flat_δ2, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fi, Fo, P)
+
     lvl = Ψaxis * (1.0 - ρ_δ3^2)
-    fit_MXH!(flat_δ3, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fis[tid], Fos[tid], Ps[tid])
+    fit_MXH!(flat_δ3, shot, lvl, Ψaxis, Raxis, Zaxis, ρaxis, Fi, Fo, P)
 
     # Extrapolate or set to zero on-axis
     ρ2 = shot.ρ[2]

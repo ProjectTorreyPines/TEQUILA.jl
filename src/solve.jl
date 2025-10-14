@@ -7,6 +7,7 @@
         debug::Bool=false,
         fit_fallback::Bool=true,
         concentric_first::Bool=true,
+        concentric_last::Symbol=:warn,
         P::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
         dP_dψ::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
         F_dF_dψ::Union{Nothing,Tuple{<:Union{FE_rep,Function},Symbol},Profile}=nothing,
@@ -29,6 +30,7 @@ Returns a new Shot, often called `refill` by convention
   - `debug=true` - Print debugging and convergence information
   - `fit_fallback=true` - Use concentric surfaces if any flux surface errors on refitting. Improves robustness in early iterations
   - `concentric_first=true` - Use concentric surfaces for first iteration, which can improve robustness if large changes from `shot` is expected
+  - `concentric_last=:warn` - If concentric surfaces used in final iteration, warn or error. Options are `:warn`, `:error`
 """
 function solve(
     shot::Shot,
@@ -38,6 +40,7 @@ function solve(
     debug::Bool=false,
     fit_fallback::Bool=true,
     concentric_first::Bool=true,
+    concentric_last::Symbol=:warn,
     P::ProfType=nothing,
     dP_dψ::ProfType=nothing,
     F_dF_dψ::ProfType=nothing,
@@ -48,10 +51,11 @@ function solve(
     Ip_target=shot.Ip_target
 )
     refill = Shot(shot; P, dP_dψ, F_dF_dψ, Jt_R, Jt, Pbnd, Fbnd, Ip_target)
-    return solve!(refill, its; tol, relax, debug, fit_fallback, concentric_first)
+    return solve!(refill, its; tol, relax, debug, fit_fallback, concentric_first, concentric_last)
 end
 
-function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0, debug::Bool=false, fit_fallback::Bool=true, concentric_first::Bool=true)
+function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0, debug::Bool=false, fit_fallback::Bool=true, concentric_first::Bool=true, concentric_last::Symbol=:warn)
+    @assert concentric_last in (:warn, :error) "concentric_last must be :warn or :error"
     if debug
         pstr = (refill.P !== nothing) ? "P on $(refill.P.grid) grid" : "dP_dψ on $(refill.dP_dψ.grid) grid"
         if refill.F_dF_dψ !== nothing
@@ -68,7 +72,7 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0, debu
     I_c = Ip(refill)
     validate_current(refill; I_c)
 
-    Fis, dFis, Fos, Ps = fft_prealloc_threaded(refill.M)
+    Fis, dFis, Fos, Ps = fft_prealloc_threadlocal(refill.M)
     A = preallocate_Astar(refill)
     L = 2 * refill.N * (2 * refill.M + 1)
     B = zeros(L)
@@ -128,7 +132,13 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0, debu
         end
 
     end
-    warn_concentric && @warn("Final iteration used concentric surfaces and is likely inaccurate")
+    if warn_concentric
+        if concentric_last === :warn
+            @warn("Final iteration used concentric surfaces and is likely inaccurate")
+        elseif concentric_last === :error
+            error("Final iteration used concentric surfaces and is likely inaccurate")
+        end
+    end
     return refill
 end
 

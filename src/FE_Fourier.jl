@@ -9,10 +9,10 @@ end
 
 function fft_prealloc_threaded(M::Integer)
     tmp = zeros(2M + 4)
-    Fis = [complex(tmp) for _ in 1:Threads.nthreads()]
-    dFis = [complex(tmp) for _ in 1:Threads.nthreads()]
-    Fos = [complex(tmp) for _ in 1:Threads.nthreads()]
-    Ps = [plan_fft(complex(tmp)) for _ in 1:Threads.nthreads()]
+    Fis = [complex(tmp) for _ in 1:nbuffers()]
+    dFis = [complex(tmp) for _ in 1:nbuffers()]
+    Fos = [complex(tmp) for _ in 1:nbuffers()]
+    Ps = [plan_fft(complex(tmp)) for _ in 1:nbuffers()]
     return Fis, dFis, Fos, Ps
 end
 

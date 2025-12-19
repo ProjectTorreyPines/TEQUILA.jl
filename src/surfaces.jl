@@ -181,12 +181,27 @@ Find the MXH `(ρ, θ)` value corresponding the `(R, Z)` for a given `shot`
 `extrapolate=true` uses the final radial finite-element value to extrapolate outside boundary,
 else ρ set to 1.0
 """
-function ρθ_RZ(shot, R, Z; extrapolate::Bool=false)
+function ρθ_RZ(shot, R, Z; extrapolate::Bool=false, ρmax::Real=10.0)
     f = x -> Δ(shot, x, R, Z)
     if f(1.0) >= 0.0
         ρ = Roots.find_zero(f, (0, 1), Roots.A42())
     else
-        ρ = extrapolate ? Roots.find_zero(f, 1.0) : 1.0
+        if !extrapolate
+            ρ = 1.0
+        else
+            ρl = 1.0
+            δ = 0.1
+            ρu = ρl + δ
+            while f(ρu) < 0.0
+                ρl = ρu
+                δ *= 2.0
+                ρu += δ
+                if ρu > ρmax
+                    error("Could not find ρ value for R=$R, Z=$Z within ρmax=$ρmax")
+                end
+            end
+            ρ = Roots.find_zero(f, (ρl, ρu), Roots.A42())
+        end
     end
     θ, _ = (ρ == 0.0) ? (0.0, 0.0) : θ_at_RZ(shot, ρ, R, Z)
     return ρ, θ
@@ -209,6 +224,24 @@ end
 function evaluate_csx(cfe, sfe, k::Integer, nu_ou, nu_eu, nu_ol, nu_el)
     cx = [evaluate_inbounds(c, k, nu_ou, nu_eu, nu_ol, nu_el) for c in cfe]
     sx = [evaluate_inbounds(s, k, nu_ou, nu_eu, nu_ol, nu_el) for s in sfe]
+    return cx, sx
+end
+
+function extrapolate_csx!(cxs, sxs, cfe, sfe, side::Symbol, k::Integer, Δx::Real,
+                          DD_nu_ou, DD_nu_eu, DD_nu_ol, DD_nu_el; tid=Threads.threadid())
+    cx = get_tmp(cxs[tid], DD_nu_ou)
+    sx = get_tmp(sxs[tid], DD_nu_ou)
+    @inbounds for m in eachindex(cfe)
+        cx[m] = extrapolate(cfe[m], side, k, Δx, DD_nu_ou, DD_nu_eu, DD_nu_ol, DD_nu_el)
+        sx[m] = extrapolate(sfe[m], side, k, Δx, DD_nu_ou, DD_nu_eu, DD_nu_ol, DD_nu_el)
+    end
+    return cx, sx
+end
+
+function extrapolate_csx(cfe, sfe, side::Symbol, k::Integer, Δx::Real,
+                         DD_nu_ou, DD_nu_eu, DD_nu_ol, DD_nu_el)
+    cx = [extrapolate(c, side, k, Δx, DD_nu_ou, DD_nu_eu, DD_nu_ol, DD_nu_el) for c in cfe]
+    sx = [extrapolate(s, side, k, Δx, DD_nu_ou, DD_nu_eu, DD_nu_ol, DD_nu_el) for s in sfe]
     return cx, sx
 end
 
@@ -238,26 +271,61 @@ function compute_MXH(shot::Shot, ρ::Real; tid=Threads.threadid())
 end
 
 function compute_MXH(ρs::AbstractVector{<:Real}, ρ::Real, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, cxs, sxs; tid=Threads.threadid())
-    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(ρs, (ρ <= 1) ? ρ : 1.0)
-    R0x = evaluate_inbounds(R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    Z0x = evaluate_inbounds(Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    ϵx = evaluate_inbounds(ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    κx = evaluate_inbounds(κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    c0x = evaluate_inbounds(c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    cx, sx = evaluate_csx!(cxs, sxs, cfe, sfe, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
-    (ρ > 1) && (ϵx *= ρ)
+    if ρ > 1.0
+        side, k, Δx, DD_bases... = compute_extrapolation_bases(ρs, ρ)
+        R0x = extrapolate(R0fe, side, k, Δx, DD_bases...)
+        Z0x = extrapolate(Z0fe, side, k, Δx, DD_bases...)
+        ϵx = extrapolate(ϵfe, side, k, Δx, DD_bases...)
+        κx = extrapolate(κfe, side, k, Δx, DD_bases...)
+        c0x = extrapolate(c0fe, side, k, Δx, DD_bases...)
+        cx, sx = extrapolate_csx!(cxs, sxs, cfe, sfe, side, k, Δx, DD_bases...; tid)
+
+        for k in eachindex(cx)
+            max_coeff = 0.9 * π/2
+            cx[k] = clamp(cx[k], -max_coeff/k^2, max_coeff/k^2)
+            sx[k] = clamp(sx[k], -max_coeff/k^2, max_coeff/k^2)
+        end
+
+    elseif ρ < 0.0
+        error("ρ value $ρ is below 0.0, which is outside the valid range for MXH surfaces.")
+    else
+        k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(ρs, ρ)
+        R0x = evaluate_inbounds(R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+        Z0x = evaluate_inbounds(Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+        ϵx = evaluate_inbounds(ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+        κx = evaluate_inbounds(κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+        c0x = evaluate_inbounds(c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+        cx, sx = evaluate_csx!(cxs, sxs, cfe, sfe, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
+    end
     return R0x, Z0x, ϵx, κx, c0x, cx, sx
 end
 
 function compute_MXH(ρs::AbstractVector{<:Real}, ρ::Real, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe)
-    k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(ρs, (ρ <= 1) ? ρ : 1.0)
-    R0x = evaluate_inbounds(R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    Z0x = evaluate_inbounds(Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    ϵx = evaluate_inbounds(ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    κx = evaluate_inbounds(κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    c0x = evaluate_inbounds(c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    cx, sx = evaluate_csx(cfe, sfe, k, nu_ou, nu_eu, nu_ol, nu_el)
-    (ρ > 1) && (ϵx *= ρ)
+    if ρ > 1.0
+        side, k, Δx, DD_bases... = compute_extrapolation_bases(ρs, ρ)
+        R0x = extrapolate(R0fe, side, k, Δx, DD_bases...)
+        Z0x = extrapolate(Z0fe, side, k, Δx, DD_bases...)
+        ϵx = extrapolate(ϵfe, side, k, Δx, DD_bases...)
+        κx = extrapolate(κfe, side, k, Δx, DD_bases...)
+        c0x = extrapolate(c0fe, side, k, Δx, DD_bases...)
+        cx, sx = extrapolate_csx(cfe, sfe, side, k, Δx, DD_bases...)
+
+        for k in eachindex(cx)
+            max_coeff = 0.9 * π/2
+            cx[k] = clamp(cx[k], -max_coeff/k^2, max_coeff/k^2)
+            sx[k] = clamp(sx[k], -max_coeff/k^2, max_coeff/k^2)
+        end
+    elseif ρ < 0.0
+        error("ρ value $ρ is below 0.0, which is outside the valid range for MXH surfaces.")
+    else
+        k, nu_ou, nu_eu, nu_ol, nu_el = compute_bases(ρs, ρ)
+        R0x = evaluate_inbounds(R0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+        Z0x = evaluate_inbounds(Z0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+        ϵx = evaluate_inbounds(ϵfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+        κx = evaluate_inbounds(κfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+        c0x = evaluate_inbounds(c0fe, k, nu_ou, nu_eu, nu_ol, nu_el)
+        cx, sx = evaluate_csx(cfe, sfe, k, nu_ou, nu_eu, nu_ol, nu_el)
+    end
     return R0x, Z0x, ϵx, κx, c0x, cx, sx
 end
 

@@ -143,7 +143,12 @@ function find_extrema_RZ(shot, level::Real, Raxis::Real, Zaxis::Real)
     @variable(model, R)
     @variable(model, Z)
 
-    register(model, :psi, 2, (x, y) -> shot(x, y); autodiff=true)
+    psi_f(x, y) = shot(x, y)
+    function psi_∇f(g, x, y)
+        g[1], g[2] = MXHEquilibrium.psi_gradient(shot, x, y)
+        return
+    end
+    register(model, :psi, 2, psi_f, psi_∇f)
     @NLconstraint(model, psi(R, Z) == level)
 
     # Zmax
@@ -199,6 +204,13 @@ function find_extrema_RZ(shot, level::Real, Raxis::Real, Zaxis::Real)
     Z_at_Rmin = value(Z)
 
     return Rmax, Z_at_Rmax, Rmin, Z_at_Rmin, R_at_Zmax, Zmax, R_at_Zmin, Zmin
+end
+
+function find_r(shot, z::ForwardDiff.Dual, lvl, rmin, rmax)
+    throw(ArgumentError(
+        "find_r received ForwardDiff.Dual input. " *
+        "This is not differentiable (calls Roots.find_zero internally)."
+    ))
 end
 
 function find_r(shot, z, lvl, rmin, rmax)

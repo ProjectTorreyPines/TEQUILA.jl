@@ -173,6 +173,21 @@ function Δ(shot, ρ, R, Z; tid=Threads.threadid(), extrapolation_order::Int=1)
     return Δ
 end
 
+function ρθ_RZ(shot, R::ForwardDiff.Dual, Z; kwargs...)
+    throw(ArgumentError(
+        "ρθ_RZ received ForwardDiff.Dual input. " *
+        "This is not differentiable (calls Roots.find_zero internally). " *
+        "Use MXHEquilibrium.psi_gradient(shot, R, Z) for ψ derivatives."
+    ))
+end
+function ρθ_RZ(shot, R, Z::ForwardDiff.Dual; kwargs...)
+    throw(ArgumentError(
+        "ρθ_RZ received ForwardDiff.Dual input. " *
+        "This is not differentiable (calls Roots.find_zero internally). " *
+        "Use MXHEquilibrium.psi_gradient(shot, R, Z) for ψ derivatives."
+    ))
+end
+
 """
     ρθ_RZ(shot, R, Z; extrapolate::Bool=false, extrapolation_order::Int=1)
 
@@ -181,6 +196,7 @@ Find the MXH `(ρ, θ)` value corresponding the `(R, Z)` for a given `shot`
 `extrapolate=true` uses the final radial finite-element value to extrapolate outside boundary,
 else ρ set to 1.0. `extrapolation_order` controls the Taylor order (1=linear, 2=quadratic).
 """
+
 function ρθ_RZ(shot, R, Z; extrapolate::Bool=false, ρmax::Real=100.0, extrapolation_order::Int=1)
     f = x -> Δ(shot, x, R, Z; extrapolation_order)
     if f(1.0) >= 0.0

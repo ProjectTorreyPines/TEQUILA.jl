@@ -139,8 +139,8 @@ function update_edge_derivatives!(Yfe, Y2, Y3, nu_ou2, nu_eu2, nu_ol2, nu_el2, n
     return Yfe.coeffs[end-1] = (nu_ou2 * b3 - nu_ou3 * b2) / D
 end
 
-function θ_at_RZ(shot::Shot, ρ::Real, R::Real, Z::Real; tid::Int=Threads.threadid())
-    R0x, Z0x, ϵx, κx, c0x, cx, sx = compute_MXH(shot, ρ; tid)
+function θ_at_RZ(shot::Shot, ρ::Real, R::Real, Z::Real; tid::Int=Threads.threadid(), extrapolation_order::Int=2)
+    R0x, Z0x, ϵx, κx, c0x, cx, sx = compute_MXH(shot, ρ; tid, extrapolation_order)
     ax = R0x * ϵx
     bx = κx * ax
     return θ_at_RZ(R, Z, R0x, Z0x, ax, bx, c0x, cx, sx)
@@ -159,8 +159,8 @@ function θ_at_RZ(R::Real, Z::Real, R0x::Real, Z0x::Real, ax::Real, bx::Real, c0
     return θ, R_at_Zext
 end
 
-function Δ(shot, ρ, R, Z; tid=Threads.threadid())
-    R0x, Z0x, ϵx, κx, c0x, cx, sx = compute_MXH(shot, ρ; tid)
+function Δ(shot, ρ, R, Z; tid=Threads.threadid(), extrapolation_order::Int=2)
+    R0x, Z0x, ϵx, κx, c0x, cx, sx = compute_MXH(shot, ρ; tid, extrapolation_order)
     ax = R0x * ϵx
     bx = κx * ax
 
@@ -174,15 +174,15 @@ function Δ(shot, ρ, R, Z; tid=Threads.threadid())
 end
 
 """
-    ρθ_RZ(shot, R, Z; extrapolate::Bool=false)
+    ρθ_RZ(shot, R, Z; extrapolate::Bool=false, extrapolation_order::Int=2)
 
 Find the MXH `(ρ, θ)` value corresponding the `(R, Z)` for a given `shot`
 
 `extrapolate=true` uses the final radial finite-element value to extrapolate outside boundary,
-else ρ set to 1.0
+else ρ set to 1.0. `extrapolation_order` controls the Taylor order (1=linear, 2=quadratic).
 """
-function ρθ_RZ(shot, R, Z; extrapolate::Bool=false, ρmax::Real=10.0)
-    f = x -> Δ(shot, x, R, Z)
+function ρθ_RZ(shot, R, Z; extrapolate::Bool=false, ρmax::Real=100.0, extrapolation_order::Int=2)
+    f = x -> Δ(shot, x, R, Z; extrapolation_order)
     if f(1.0) >= 0.0
         ρ = Roots.find_zero(f, (0, 1), Roots.A42())
     else
@@ -203,7 +203,7 @@ function ρθ_RZ(shot, R, Z; extrapolate::Bool=false, ρmax::Real=10.0)
             ρ = Roots.find_zero(f, (ρl, ρu), Roots.A42())
         end
     end
-    θ, _ = (ρ == 0.0) ? (0.0, 0.0) : θ_at_RZ(shot, ρ, R, Z)
+    θ, _ = (ρ == 0.0) ? (0.0, 0.0) : θ_at_RZ(shot, ρ, R, Z; extrapolation_order)
     return ρ, θ
 end
 
@@ -228,20 +228,20 @@ function evaluate_csx(cfe, sfe, k::Integer, nu_ou, nu_eu, nu_ol, nu_el)
 end
 
 function extrapolate_csx!(cxs, sxs, cfe, sfe, side::Symbol, k::Integer, Δx::Real,
-                          DD_nu_ou, DD_nu_eu, DD_nu_ol, DD_nu_el; tid=Threads.threadid())
+                          DD_nu_ou, DD_nu_eu, DD_nu_ol, DD_nu_el; tid=Threads.threadid(), order::Int=2)
     cx = get_tmp(cxs[tid], DD_nu_ou)
     sx = get_tmp(sxs[tid], DD_nu_ou)
     @inbounds for m in eachindex(cfe)
-        cx[m] = extrapolate(cfe[m], side, k, Δx, DD_nu_ou, DD_nu_eu, DD_nu_ol, DD_nu_el)
-        sx[m] = extrapolate(sfe[m], side, k, Δx, DD_nu_ou, DD_nu_eu, DD_nu_ol, DD_nu_el)
+        cx[m] = extrapolate(cfe[m], side, k, Δx, DD_nu_ou, DD_nu_eu, DD_nu_ol, DD_nu_el; order)
+        sx[m] = extrapolate(sfe[m], side, k, Δx, DD_nu_ou, DD_nu_eu, DD_nu_ol, DD_nu_el; order)
     end
     return cx, sx
 end
 
 function extrapolate_csx(cfe, sfe, side::Symbol, k::Integer, Δx::Real,
-                         DD_nu_ou, DD_nu_eu, DD_nu_ol, DD_nu_el)
-    cx = [extrapolate(c, side, k, Δx, DD_nu_ou, DD_nu_eu, DD_nu_ol, DD_nu_el) for c in cfe]
-    sx = [extrapolate(s, side, k, Δx, DD_nu_ou, DD_nu_eu, DD_nu_ol, DD_nu_el) for s in sfe]
+                         DD_nu_ou, DD_nu_eu, DD_nu_ol, DD_nu_el; order::Int=2)
+    cx = [extrapolate(c, side, k, Δx, DD_nu_ou, DD_nu_eu, DD_nu_ol, DD_nu_el; order) for c in cfe]
+    sx = [extrapolate(s, side, k, Δx, DD_nu_ou, DD_nu_eu, DD_nu_ol, DD_nu_el; order) for s in sfe]
     return cx, sx
 end
 
@@ -265,27 +265,42 @@ function evaluate_dcsx(cfe, sfe, k::Integer, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     return dcx, dsx
 end
 
-function compute_MXH(shot::Shot, ρ::Real; tid=Threads.threadid())
+function compute_MXH(shot::Shot, ρ::Real; tid=Threads.threadid(), extrapolation_order::Int=2)
     return compute_MXH(shot.ρ, ρ, shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe,
-        shot.cfe, shot.sfe, shot._cx, shot._sx; tid)
+        shot.cfe, shot.sfe, shot._cx, shot._sx; tid, extrapolation_order)
 end
 
-function compute_MXH(ρs::AbstractVector{<:Real}, ρ::Real, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, cxs, sxs; tid=Threads.threadid())
-    if ρ > 1.0
+function compute_MXH(ρs::AbstractVector{<:Real}, ρ::Real, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, cxs, sxs; tid=Threads.threadid(), extrapolation_order::Int=2, ρmax::Real=1.05)
+
+   if ρ > 1.0 && ρ < ρmax
         side, k, Δx, DD_bases... = compute_extrapolation_bases(ρs, ρ)
-        R0x = extrapolate(R0fe, side, k, Δx, DD_bases...)
-        Z0x = extrapolate(Z0fe, side, k, Δx, DD_bases...)
-        ϵx = extrapolate(ϵfe, side, k, Δx, DD_bases...)
-        κx = extrapolate(κfe, side, k, Δx, DD_bases...)
-        c0x = extrapolate(c0fe, side, k, Δx, DD_bases...)
-        cx, sx = extrapolate_csx!(cxs, sxs, cfe, sfe, side, k, Δx, DD_bases...; tid)
+        R0x = extrapolate(R0fe, side, k, Δx, DD_bases...; order=extrapolation_order)
+        Z0x = extrapolate(Z0fe, side, k, Δx, DD_bases...; order=extrapolation_order)
+        ϵx = extrapolate(ϵfe, side, k, Δx, DD_bases...; order=extrapolation_order)
+        κx = extrapolate(κfe, side, k, Δx, DD_bases...; order=extrapolation_order)
+        c0x = extrapolate(c0fe, side, k, Δx, DD_bases...; order=extrapolation_order)
+        cx, sx = extrapolate_csx!(cxs, sxs, cfe, sfe, side, k, Δx, DD_bases...; tid, order=extrapolation_order)
 
         for k in eachindex(cx)
             max_coeff = 0.9 * π/2
             cx[k] = clamp(cx[k], -max_coeff/k^2, max_coeff/k^2)
             sx[k] = clamp(sx[k], -max_coeff/k^2, max_coeff/k^2)
         end
+    elseif ρ > ρmax
+        side, k, Δx, DD_bases... = compute_extrapolation_bases(ρs, ρmax)
+        R0x = extrapolate(R0fe, side, k, Δx, DD_bases...; order=extrapolation_order)
+        Z0x = extrapolate(Z0fe, side, k, Δx, DD_bases...; order=extrapolation_order)
+        ϵx = extrapolate(ϵfe, side, k, Δx, DD_bases...; order=extrapolation_order)
+        κx = extrapolate(κfe, side, k, Δx, DD_bases...; order=extrapolation_order)
+        c0x = extrapolate(c0fe, side, k, Δx, DD_bases...; order=extrapolation_order)
+        cx, sx = extrapolate_csx(cfe, sfe, side, k, Δx, DD_bases...; order=extrapolation_order)
 
+        for k in eachindex(cx)
+            max_coeff = 0.9 * π/2
+            cx[k] = clamp(cx[k], -max_coeff/k^2, max_coeff/k^2)
+            sx[k] = clamp(sx[k], -max_coeff/k^2, max_coeff/k^2)
+        end
+        ϵx *= ρ/ρmax
     elseif ρ < 0.0
         error("ρ value $ρ is below 0.0, which is outside the valid range for MXH surfaces.")
     else
@@ -300,21 +315,37 @@ function compute_MXH(ρs::AbstractVector{<:Real}, ρ::Real, R0fe, Z0fe, ϵfe, κ
     return R0x, Z0x, ϵx, κx, c0x, cx, sx
 end
 
-function compute_MXH(ρs::AbstractVector{<:Real}, ρ::Real, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe)
-    if ρ > 1.0
+function compute_MXH(ρs::AbstractVector{<:Real}, ρ::Real, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe; extrapolation_order::Int=2, ρmax::Real=1.05)
+
+    if (ρ > 1.0 && ρ < ρmax)
         side, k, Δx, DD_bases... = compute_extrapolation_bases(ρs, ρ)
-        R0x = extrapolate(R0fe, side, k, Δx, DD_bases...)
-        Z0x = extrapolate(Z0fe, side, k, Δx, DD_bases...)
-        ϵx = extrapolate(ϵfe, side, k, Δx, DD_bases...)
-        κx = extrapolate(κfe, side, k, Δx, DD_bases...)
-        c0x = extrapolate(c0fe, side, k, Δx, DD_bases...)
-        cx, sx = extrapolate_csx(cfe, sfe, side, k, Δx, DD_bases...)
+        R0x = extrapolate(R0fe, side, k, Δx, DD_bases...; order=extrapolation_order)
+        Z0x = extrapolate(Z0fe, side, k, Δx, DD_bases...; order=extrapolation_order)
+        ϵx = extrapolate(ϵfe, side, k, Δx, DD_bases...; order=extrapolation_order)
+        κx = extrapolate(κfe, side, k, Δx, DD_bases...; order=extrapolation_order)
+        c0x = extrapolate(c0fe, side, k, Δx, DD_bases...; order=extrapolation_order)
+        cx, sx = extrapolate_csx(cfe, sfe, side, k, Δx, DD_bases...; order=extrapolation_order)
 
         for k in eachindex(cx)
             max_coeff = 0.9 * π/2
             cx[k] = clamp(cx[k], -max_coeff/k^2, max_coeff/k^2)
             sx[k] = clamp(sx[k], -max_coeff/k^2, max_coeff/k^2)
         end
+    elseif ρ > ρmax
+        side, k, Δx, DD_bases... = compute_extrapolation_bases(ρs, ρmax)
+        R0x = extrapolate(R0fe, side, k, Δx, DD_bases...; order=extrapolation_order)
+        Z0x = extrapolate(Z0fe, side, k, Δx, DD_bases...; order=extrapolation_order)
+        ϵx = extrapolate(ϵfe, side, k, Δx, DD_bases...; order=extrapolation_order)
+        κx = extrapolate(κfe, side, k, Δx, DD_bases...; order=extrapolation_order)
+        c0x = extrapolate(c0fe, side, k, Δx, DD_bases...; order=extrapolation_order)
+        cx, sx = extrapolate_csx(cfe, sfe, side, k, Δx, DD_bases...; order=extrapolation_order)
+
+        for k in eachindex(cx)
+            max_coeff = 0.9 * π/2
+            cx[k] = clamp(cx[k], -max_coeff/k^2, max_coeff/k^2)
+            sx[k] = clamp(sx[k], -max_coeff/k^2, max_coeff/k^2)
+        end
+        ϵx *= ρ/ρmax
     elseif ρ < 0.0
         error("ρ value $ρ is below 0.0, which is outside the valid range for MXH surfaces.")
     else

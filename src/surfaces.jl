@@ -139,7 +139,7 @@ function update_edge_derivatives!(Yfe, Y2, Y3, nu_ou2, nu_eu2, nu_ol2, nu_el2, n
     return Yfe.coeffs[end-1] = (nu_ou2 * b3 - nu_ou3 * b2) / D
 end
 
-function θ_at_RZ(shot::Shot, ρ::Real, R::Real, Z::Real; tid::Int=Threads.threadid(), extrapolation_order::Int=2)
+function θ_at_RZ(shot::Shot, ρ::Real, R::Real, Z::Real; tid::Int=Threads.threadid(), extrapolation_order::Int=1)
     R0x, Z0x, ϵx, κx, c0x, cx, sx = compute_MXH(shot, ρ; tid, extrapolation_order)
     ax = R0x * ϵx
     bx = κx * ax
@@ -159,7 +159,7 @@ function θ_at_RZ(R::Real, Z::Real, R0x::Real, Z0x::Real, ax::Real, bx::Real, c0
     return θ, R_at_Zext
 end
 
-function Δ(shot, ρ, R, Z; tid=Threads.threadid(), extrapolation_order::Int=2)
+function Δ(shot, ρ, R, Z; tid=Threads.threadid(), extrapolation_order::Int=1)
     R0x, Z0x, ϵx, κx, c0x, cx, sx = compute_MXH(shot, ρ; tid, extrapolation_order)
     ax = R0x * ϵx
     bx = κx * ax
@@ -174,14 +174,14 @@ function Δ(shot, ρ, R, Z; tid=Threads.threadid(), extrapolation_order::Int=2)
 end
 
 """
-    ρθ_RZ(shot, R, Z; extrapolate::Bool=false, extrapolation_order::Int=2)
+    ρθ_RZ(shot, R, Z; extrapolate::Bool=false, extrapolation_order::Int=1)
 
 Find the MXH `(ρ, θ)` value corresponding the `(R, Z)` for a given `shot`
 
 `extrapolate=true` uses the final radial finite-element value to extrapolate outside boundary,
 else ρ set to 1.0. `extrapolation_order` controls the Taylor order (1=linear, 2=quadratic).
 """
-function ρθ_RZ(shot, R, Z; extrapolate::Bool=false, ρmax::Real=100.0, extrapolation_order::Int=2)
+function ρθ_RZ(shot, R, Z; extrapolate::Bool=false, ρmax::Real=100.0, extrapolation_order::Int=1)
     f = x -> Δ(shot, x, R, Z; extrapolation_order)
     if f(1.0) >= 0.0
         ρ = Roots.find_zero(f, (0, 1), Roots.A42())
@@ -265,14 +265,14 @@ function evaluate_dcsx(cfe, sfe, k::Integer, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
     return dcx, dsx
 end
 
-function compute_MXH(shot::Shot, ρ::Real; tid=Threads.threadid(), extrapolation_order::Int=2)
+function compute_MXH(shot::Shot, ρ::Real; tid=Threads.threadid(), extrapolation_order::Int=1)
     return compute_MXH(shot.ρ, ρ, shot.R0fe, shot.Z0fe, shot.ϵfe, shot.κfe, shot.c0fe,
         shot.cfe, shot.sfe, shot._cx, shot._sx; tid, extrapolation_order)
 end
 
-function compute_MXH(ρs::AbstractVector{<:Real}, ρ::Real, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, cxs, sxs; tid=Threads.threadid(), extrapolation_order::Int=2, ρmax::Real=1.05)
+function compute_MXH(ρs::AbstractVector{<:Real}, ρ::Real, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe, cxs, sxs; tid=Threads.threadid(), extrapolation_order::Int=1, ρmax::Real=1.05)
 
-   if ρ > 1.0 && ρ < ρmax
+   if ρ > 1.0 && ρ ≤ ρmax
         side, k, Δx, DD_bases... = compute_extrapolation_bases(ρs, ρ)
         R0x = extrapolate(R0fe, side, k, Δx, DD_bases...; order=extrapolation_order)
         Z0x = extrapolate(Z0fe, side, k, Δx, DD_bases...; order=extrapolation_order)
@@ -315,9 +315,9 @@ function compute_MXH(ρs::AbstractVector{<:Real}, ρ::Real, R0fe, Z0fe, ϵfe, κ
     return R0x, Z0x, ϵx, κx, c0x, cx, sx
 end
 
-function compute_MXH(ρs::AbstractVector{<:Real}, ρ::Real, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe; extrapolation_order::Int=2, ρmax::Real=1.05)
+function compute_MXH(ρs::AbstractVector{<:Real}, ρ::Real, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe; extrapolation_order::Int=1, ρmax::Real=1.05)
 
-    if (ρ > 1.0 && ρ < ρmax)
+    if (ρ > 1.0 && ρ ≤ ρmax)
         side, k, Δx, DD_bases... = compute_extrapolation_bases(ρs, ρ)
         R0x = extrapolate(R0fe, side, k, Δx, DD_bases...; order=extrapolation_order)
         Z0x = extrapolate(Z0fe, side, k, Δx, DD_bases...; order=extrapolation_order)

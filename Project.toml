@@ -1,7 +1,7 @@
 name = "TEQUILA"
 uuid = "a60c9cbd-e72f-4185-96b6-b8fc312c4d37"
 authors = ["Brendan C. Lyons <bclyons12@gmail.com> and contributors"]
-version = "1.1.7"
+version = "1.1.8"
 
 [deps]
 BSON = "fbb218c0-5317-5bc6-957e-2ee96dd4b1f0"
@@ -26,7 +26,7 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 [compat]
 BSON = "0.3"
 FFTW = "1"
-FiniteElementHermite = "1"
+FiniteElementHermite = "1.1"
 ForwardDiff = "0.10, 1"
 JuMP = "1"
 LinearSolve = "2, 3"
@@ -35,7 +35,7 @@ MillerExtendedHarmonic = "1, 2"
 NLopt = "0.6, 1"
 Optim = "1"
 PlotUtils = "1"
-PreallocationTools = "0.4"
+PreallocationTools = "0.4, 1"
 QuadGK = "2 - 2.9.1, 2.9.4"
 RecipesBase = "1"
 Roots = "2"

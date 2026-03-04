@@ -181,6 +181,21 @@ Find the MXH `(ρ, θ)` value corresponding the `(R, Z)` for a given `shot`
 `extrapolate=true` uses the final radial finite-element value to extrapolate outside boundary,
 else ρ set to 1.0
 """
+function ρθ_RZ(shot, R::ForwardDiff.Dual, Z; extrapolate::Bool=false)
+    throw(ArgumentError(
+        "ρθ_RZ received ForwardDiff.Dual input. " *
+        "This is not differentiable (calls Roots.find_zero internally). " *
+        "Use MXHEquilibrium.psi_gradient(shot, R, Z) for ψ derivatives."
+    ))
+end
+function ρθ_RZ(shot, R, Z::ForwardDiff.Dual; extrapolate::Bool=false)
+    throw(ArgumentError(
+        "ρθ_RZ received ForwardDiff.Dual input. " *
+        "This is not differentiable (calls Roots.find_zero internally). " *
+        "Use MXHEquilibrium.psi_gradient(shot, R, Z) for ψ derivatives."
+    ))
+end
+
 function ρθ_RZ(shot, R, Z; extrapolate::Bool=false)
     f = x -> Δ(shot, x, R, Z)
     if f(1.0) >= 0.0

@@ -19,7 +19,25 @@ const psi_fe = TEQUILA.FE(x, (x .^ 2) .- 2.0)
     @test Shot(11, 5, 6, (@__DIR__) * "/g_chease_mxh_d3d") isa Shot
     shot = Shot(11, 11, bnd, psi_fe; P=(P, :toroidal), Jt_R=(J, :toroidal), Pbnd, Fbnd, Ip_target)
     @test solve(shot, 5) isa Shot
-    refill = solve(shot, 21; relax=0.5, tol=1e-3, debug=true, dP_dψ=(Pp, :toroidal), Jt=(J, :toroidal), concentric_last=:error)
+
+    refill = solve(shot, 21; relax=0.5, tol=1e-3, debug=true, dP_dψ=(Pp, :toroidal), Jt=(J, :toroidal), concentric_last=:error, fit_fallback=false)
     @test refill isa Shot
     @test isapprox(shot.Ip_target, Ip(refill); rtol=1e-2)
+
+    # BCL 3/4/2026: axis Ψgood set from the following versioninfo()
+    #   Julia Version 1.11.7
+    #   Commit f2b3dbda30a (2025-09-08 12:10 UTC)
+    #   Build Info:
+    #     Official https://julialang.org/ release
+    #   Platform Info:
+    #     OS: macOS (arm64-apple-darwin24.0.0)
+    #     CPU: 12 × Apple M4 Pro
+    #     WORD_SIZE: 64
+    #     LLVM: libLLVM-16.0.6 (ORCJIT, apple-m1)
+    #   Threads: 8 default, 0 interactive, 4 GC (on 8 virtual cores)
+    #   Environment:
+    #     JULIA_NUM_THREADS = auto
+    Ψgood = -0.758609506834637
+    _, _, Ψaxis = find_axis(refill)
+    @test isapprox(Ψaxis, Ψgood; rtol=1e-4)
 end

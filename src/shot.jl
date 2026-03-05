@@ -542,7 +542,7 @@ Functor for a Shot - returns the flux at `(r, z)`
 `extrapolate=true` uses the final radial finite-element value to extrapolate outside boundary,
 else the flux is zero
 """
-function (shot::Shot)(r, z; extrapolate::Bool=false, extrapolation_order::Int=2)
+function (shot::Shot)(r, z; extrapolate::Bool=false, extrapolation_order::Int=1)
     ρ, θ = ρθ_RZ(shot, r, z; extrapolate, extrapolation_order)
     return psi_ρθ(shot, ρ, θ)
 end

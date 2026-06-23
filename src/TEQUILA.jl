@@ -13,6 +13,7 @@ import PlotUtils: cgrad
 import QuadGK: quadgk
 import Roots
 using PreallocationTools
+using JuMP
 import NLopt
 import BSON
 using LinearSolve
@@ -24,8 +25,7 @@ const μ₀ = 4e-7 * π
 const lower_2 = zeros(2)
 const upper_2 = zeros(2)
 const x0_2 = zeros(2)
-# NLopt return codes that indicate a successful/converged solve (positive codes)
-const nlopt_success = (:SUCCESS, :STOPVAL_REACHED, :FTOL_REACHED, :XTOL_REACHED, :MAXEVAL_REACHED, :MAXTIME_REACHED, :ROUNDOFF_LIMITED)
+const jump_success = @SVector[JuMP.OPTIMAL, JuMP.LOCALLY_SOLVED]
 const int_order = 5
 
 # used in surfaces_FE for update_edge_derivatives!, as well as in fitted_surfaces
@@ -189,7 +189,5 @@ export solve
 
 const document = Dict()
 document[Symbol(@__MODULE__)] = [:solve; [name for name in Base.names(@__MODULE__; all=false, imported=false) if (name != Symbol(@__MODULE__) && name != :solve)]]
-
-include("precompile.jl")
 
 end

@@ -12,111 +12,89 @@ function residual_extrema(shot, lvl, Rmax, Z_at_Rmax, Rmin, Z_at_Rmin, R_at_Zmax
     return sqrt(res / lvl^2)
 end
 
-function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real, ρaxis::Real; algorithm::Symbol=:LD_SLSQP)
-    model = Model(NLopt.Optimizer; add_bridges=false)
-    set_optimizer_attribute(model, "algorithm", algorithm)
-    set_optimizer_attribute(model, "maxtime", 10.0)
-    @variable(model, ρ)
-    @variable(model, θ)
+# Solve a single 2-variable, equality-constrained extremum problem with NLopt.
+# Replaces the former JuMP+NLopt modeling layer (same solvers, lighter deps).
+# `objfun` and `constraint` take the 2-vector x; for gradient-based algorithms the
+# gradients are filled with ForwardDiff (matching JuMP's `autodiff=true`).
+function _solve_extremum(objfun, constraint, x0::Vector{Float64}, lb::Vector{Float64}, ub::Vector{Float64}, sense::Symbol, algorithm::Symbol)
+    opt = NLopt.Opt(algorithm, 2)
+    opt.lower_bounds = lb
+    opt.upper_bounds = ub
+    opt.maxtime = 10.0
+    wrapped = (x, g) -> begin
+        if length(g) > 0
+            ForwardDiff.gradient!(g, objfun, x)
+        end
+        return objfun(x)
+    end
+    if sense === :max
+        opt.max_objective = wrapped
+    else
+        opt.min_objective = wrapped
+    end
+    NLopt.equality_constraint!(opt, constraint, 1e-8)
+    (_, optx, ret) = NLopt.optimize(opt, clamp.(x0, lb, ub))
+    @assert ret in nlopt_success "MXH fit extremum optimization failed (status :$ret)"
+    return optx
+end
 
-    register(model, :psi, 2, (r, t) -> psi_ρθ(shot, r, t); autodiff=true)
-    @NLconstraint(model, psi(ρ, θ) == level)
+function find_extrema(shot, level::Real, Ψaxis::Real, Raxis::Real, Zaxis::Real, ρaxis::Real; algorithm::Symbol=:LD_SLSQP)
+    Rloc = (r, t) -> TEQUILA.R(shot, r, t)
+    Zloc = (r, t) -> TEQUILA.Z(shot, r, t)
+
+    # nonlinear equality constraint psi(ρ,θ) == level, with ForwardDiff gradient
+    constraint = (x, g) -> begin
+        if length(g) > 0
+            ForwardDiff.gradient!(g, v -> psi_ρθ(shot, v[1], v[2]), x)
+        end
+        return psi_ρθ(shot, x[1], x[2]) - level
+    end
 
     ρguess = sqrt(1 - level / Ψaxis)
     aguess = ρguess * shot.surfaces[1, end] * shot.surfaces[2, end]
     bguess = aguess * shot.surfaces[4, end]
 
-    set_lower_bound(ρ, 1e-8) #avoid singularity on-axis
-    set_upper_bound(ρ, 1.0)
-
-    Rloc = (r, t) -> TEQUILA.R(shot, r, t)
-    Zloc = (r, t) -> TEQUILA.Z(shot, r, t)
-    register(model, :Rloc, 2, Rloc; autodiff=true)
-    register(model, :Zloc, 2, Zloc; autodiff=true)
+    ρlb, ρub = 1e-8, 1.0 # avoid singularity on-axis; ρ ≤ 1
 
     # Zmax
     if ρguess < 2ρaxis
-        rguess = Raxis
-        zguess = Zaxis + bguess
-        ρ0, θ0 = ρθ_RZ(shot, rguess, zguess)
-        set_start_value(ρ, ρ0)
-        set_lower_bound(θ, θ0 - twopi)
-        set_upper_bound(θ, θ0 + twopi)
-        set_start_value(θ, θ0)
+        ρ0, θ0 = ρθ_RZ(shot, Raxis, Zaxis + bguess)
+        x0, lb, ub = [ρ0, θ0], [ρlb, θ0 - twopi], [ρub, θ0 + twopi]
     else
-        set_start_value(ρ, ρguess)
-        set_lower_bound(θ, -2.5 * π)
-        set_upper_bound(θ, 1.5 * π)
-        set_start_value(θ, -0.5 * π)
+        x0, lb, ub = [ρguess, -0.5 * π], [ρlb, -2.5 * π], [ρub, 1.5 * π]
     end
-    @NLobjective(model, Max, Zloc(ρ, θ))
-    JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
-    ρ_Zmax = value(ρ)
-    θ_Zmax = value(θ)
+    optx = _solve_extremum(x -> Zloc(x[1], x[2]), constraint, x0, lb, ub, :max, algorithm)
+    ρ_Zmax, θ_Zmax = optx[1], optx[2]
 
     # Zmin
     if ρguess < 2ρaxis
-        rguess = Raxis
-        zguess = Zaxis - bguess
-        ρ0, θ0 = ρθ_RZ(shot, rguess, zguess)
-        set_start_value(ρ, ρ0)
-        set_lower_bound(θ, θ0 - twopi)
-        set_upper_bound(θ, θ0 + twopi)
-        set_start_value(θ, θ0)
+        ρ0, θ0 = ρθ_RZ(shot, Raxis, Zaxis - bguess)
+        x0, lb, ub = [ρ0, θ0], [ρlb, θ0 - twopi], [ρub, θ0 + twopi]
     else
-        set_start_value(ρ, ρguess)
-        set_lower_bound(θ, -1.5 * π)
-        set_upper_bound(θ, 2.5 * π)
-        set_start_value(θ, 0.5 * π)
+        x0, lb, ub = [ρguess, 0.5 * π], [ρlb, -1.5 * π], [ρub, 2.5 * π]
     end
-    @NLobjective(model, Min, Zloc(ρ, θ))
-    JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
-    ρ_Zmin = value(ρ)
-    θ_Zmin = value(θ)
+    optx = _solve_extremum(x -> Zloc(x[1], x[2]), constraint, x0, lb, ub, :min, algorithm)
+    ρ_Zmin, θ_Zmin = optx[1], optx[2]
 
     # Rmax
     if ρguess < 2ρaxis
-        rguess = Raxis + aguess
-        zguess = Zaxis
-        ρ0, θ0 = ρθ_RZ(shot, rguess, zguess)
-        set_start_value(ρ, ρ0)
-        set_lower_bound(θ, θ0 - twopi)
-        set_upper_bound(θ, θ0 + twopi)
-        set_start_value(θ, θ0)
+        ρ0, θ0 = ρθ_RZ(shot, Raxis + aguess, Zaxis)
+        x0, lb, ub = [ρ0, θ0], [ρlb, θ0 - twopi], [ρub, θ0 + twopi]
     else
-        set_start_value(ρ, ρguess)
-        set_lower_bound(θ, -twopi)
-        set_upper_bound(θ, twopi)
-        set_start_value(θ, 0.0)
+        x0, lb, ub = [ρguess, 0.0], [ρlb, -twopi], [ρub, twopi]
     end
-    @NLobjective(model, Max, Rloc(ρ, θ))
-    JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
-    ρ_Rmax = value(ρ)
-    θ_Rmax = value(θ)
+    optx = _solve_extremum(x -> Rloc(x[1], x[2]), constraint, x0, lb, ub, :max, algorithm)
+    ρ_Rmax, θ_Rmax = optx[1], optx[2]
 
     # Rmin
     if ρguess < 2ρaxis
-        rguess = Raxis - aguess
-        zguess = Zaxis
-        ρ0, θ0 = ρθ_RZ(shot, rguess, zguess)
-        set_start_value(ρ, ρ0)
-        set_lower_bound(θ, θ0 - twopi)
-        set_upper_bound(θ, θ0 + twopi)
-        set_start_value(θ, θ0)
+        ρ0, θ0 = ρθ_RZ(shot, Raxis - aguess, Zaxis)
+        x0, lb, ub = [ρ0, θ0], [ρlb, θ0 - twopi], [ρub, θ0 + twopi]
     else
-        set_start_value(ρ, ρguess)
-        set_lower_bound(θ, -π)
-        set_upper_bound(θ, 3π)
-        set_start_value(θ, π)
+        x0, lb, ub = [ρguess, π], [ρlb, -π], [ρub, 3π]
     end
-    @NLobjective(model, Min, Rloc(ρ, θ))
-    JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
-    ρ_Rmin = value(ρ)
-    θ_Rmin = value(θ)
+    optx = _solve_extremum(x -> Rloc(x[1], x[2]), constraint, x0, lb, ub, :min, algorithm)
+    ρ_Rmin, θ_Rmin = optx[1], optx[2]
 
     Rmax, Z_at_Rmax = R_Z(shot, ρ_Rmax, θ_Rmax)
     Rmin, Z_at_Rmin = R_Z(shot, ρ_Rmin, θ_Rmin)
@@ -137,71 +115,31 @@ function find_extrema_RZ(shot, level::Real, Raxis::Real, Zaxis::Real)
     Zb_min = Z0 - b
     Zb_max = Z0 + b
 
-    model = Model(NLopt.Optimizer; add_bridges=false)
-    set_optimizer_attribute(model, "algorithm", :LN_COBYLA)
-    set_optimizer_attribute(model, "maxtime", 10.0)
-    @variable(model, R)
-    @variable(model, Z)
-
-    psi_f(x, y) = shot(x, y)
-    function psi_∇f(g, x, y)
-        g[1], g[2] = MXHEquilibrium.psi_gradient(shot, x, y)
-        return
+    # nonlinear equality constraint psi(R,Z) == level, with analytic gradient
+    # (LN_COBYLA is derivative-free, so the gradient is only used if the algorithm requests it)
+    constraint = (x, g) -> begin
+        if length(g) > 0
+            g[1], g[2] = MXHEquilibrium.psi_gradient(shot, x[1], x[2])
+        end
+        return shot(x[1], x[2]) - level
     end
-    register(model, :psi, 2, psi_f, psi_∇f)
-    @NLconstraint(model, psi(R, Z) == level)
 
     # Zmax
-    set_lower_bound(Z, Zaxis)
-    set_upper_bound(Z, Zb_max)
-    set_lower_bound(R, Rb_min)
-    set_upper_bound(R, Rb_max)
-    set_start_value(R, Raxis)
-    set_start_value(Z, Zaxis)
-    @objective(model, Max, Z)
-    JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
-    R_at_Zmax = value(R)
-    Zmax = value(Z)
+    x0 = [Raxis, Zaxis]
+    optx = _solve_extremum(x -> x[2], constraint, x0, [Rb_min, Zaxis], [Rb_max, Zb_max], :max, :LN_COBYLA)
+    R_at_Zmax, Zmax = optx[1], optx[2]
 
     # Zmin
-    set_lower_bound(Z, Zb_min)
-    set_upper_bound(Z, Zaxis)
-    set_lower_bound(R, Rb_min)
-    set_upper_bound(R, Rb_max)
-    set_start_value(R, Raxis)
-    set_start_value(Z, Zaxis)
-    @objective(model, Min, Z)
-    JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
-    R_at_Zmin = value(R)
-    Zmin = value(Z)
+    optx = _solve_extremum(x -> x[2], constraint, x0, [Rb_min, Zb_min], [Rb_max, Zaxis], :min, :LN_COBYLA)
+    R_at_Zmin, Zmin = optx[1], optx[2]
 
     # Rmax
-    set_lower_bound(Z, Zb_min)
-    set_upper_bound(Z, Zb_max)
-    set_lower_bound(R, Raxis)
-    set_upper_bound(R, Rb_max)
-    set_start_value(R, Raxis)
-    set_start_value(Z, Zaxis)
-    @objective(model, Max, R)
-    JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
-    Rmax = value(R)
-    Z_at_Rmax = value(Z)
+    optx = _solve_extremum(x -> x[1], constraint, x0, [Raxis, Zb_min], [Rb_max, Zb_max], :max, :LN_COBYLA)
+    Rmax, Z_at_Rmax = optx[1], optx[2]
 
     # Rmin
-    set_lower_bound(Z, Zb_min)
-    set_upper_bound(Z, Zb_max)
-    set_lower_bound(R, Rb_min)
-    set_upper_bound(R, Raxis)
-    set_start_value(R, Raxis)
-    set_start_value(Z, Zaxis)
-    @objective(model, Min, R)
-    JuMP.optimize!(model)
-    @assert termination_status(model) in jump_success
-    Rmin = value(R)
-    Z_at_Rmin = value(Z)
+    optx = _solve_extremum(x -> x[1], constraint, x0, [Rb_min, Zb_min], [Raxis, Zb_max], :min, :LN_COBYLA)
+    Rmin, Z_at_Rmin = optx[1], optx[2]
 
     return Rmax, Z_at_Rmax, Rmin, Z_at_Rmin, R_at_Zmax, Zmax, R_at_Zmin, Zmin
 end

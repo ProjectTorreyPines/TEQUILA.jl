@@ -32,6 +32,7 @@ struct VEQTopology
     h_count::Int
     v_count::Int
     kappa_count::Int
+    c0_count::Int
     psin_count::Int
     F_count::Int
     c_counts::Vector{Int}
@@ -51,6 +52,7 @@ function VEQTopology(;
     h_count::Int,
     v_count::Int=0,
     kappa_count::Int,
+    c0_count::Int=0,
     psin_count::Int,
     F_count::Int=0,
     c_counts::AbstractVector{<:Integer}=Int[],
@@ -73,7 +75,7 @@ function VEQTopology(;
     F_count == 0 || error("VEQ: active F family not implemented for route=:PF")
     ip_constraint && beta_constraint && error("VEQ: Ip and beta constraints are mutually exclusive for PF")
     return VEQTopology(
-        h_count, v_count, kappa_count, psin_count, F_count,
+        h_count, v_count, kappa_count, c0_count, psin_count, F_count,
         collect(Int, c_counts), collect(Int, s_counts),
         Nr, Nt, route, coordinate, nodes, ip_constraint, beta_constraint,
         sample_count, K_max)
@@ -104,9 +106,7 @@ function veq_blocks(top::VEQTopology)
     push!(blocks, VEQBlock(:h, :h, 0, top.h_count, 0, 1.0, Int[]))
     push!(blocks, VEQBlock(:v, :v, 0, top.v_count, 0, 1.0, Int[]))
     push!(blocks, VEQBlock(:k, :k, 0, top.kappa_count, 0, 1.0, Int[]))
-    # c0 is currently always passive (boundary tilt only); an active c0 would
-    # need its own topology count slot.
-    push!(blocks, VEQBlock(:c0, :c0, 0, 0, 0, 1.0, Int[]))
+    push!(blocks, VEQBlock(:c0, :c0, 0, top.c0_count, 0, 1.0, Int[]))
     for (m, cnt) in enumerate(top.c_counts)
         push!(blocks, VEQBlock(Symbol(:c, m), :c, m, cnt, veq_K_value(m, top.K_max), 1.0, Int[]))
     end

@@ -60,9 +60,27 @@ R(ρ,θ)  = R0 + a·( h(ρ) + ρ·cos θb )
 Z(ρ,θ)  = Z0 + a·( v(ρ) − ρ·k(ρ)·sin θ )
 ```
 
-(veqpy folds Z0 into v; sign convention: Z decreases with sinθ — check against
-MillerExtendedHarmonic convention `Z = Z0 + a κ ρ sin θ` when interoperating;
-θ orientation differs by θ → −θ.)
+(veqpy folds Z0 into v. CONFIRMED: this is the *same* convention as
+MillerExtendedHarmonic — `Z_MXH = Z0 − κ a sin θ`, `R_MXH = R0 + a cos θr` —
+so Shot boundary surfaces map to VEQBoundary with no sign flips.)
+
+## TEQUILA interop (src/veq_shot.jl)
+
+- TEQUILA ρ grid: ρ = sqrt(normalized poloidal flux), Ψbnd = 0, surface k at
+  Ψ = Ψaxis(1−ρ_k²), i.e. ψn = ρ_k².
+- **Flux convention**: TEQUILA Ψ is total flux (Wb); VEQ's GS residual is
+  per-radian, so α2 = (ψ_s/2π)² with ψ_s = dΨ_TEQUILA/dψn = −Ψaxis.
+  Confirmed numerically: the (2π)² factor reproduces Picard's Ψaxis to <0.5%.
+- PF no-constraint inputs in physical units: heat = dP/dψn = ψ_s·dP/dΨ,
+  curr = d(F²/2)/dψn = ψ_s·F dF/dΨ. Both scale linearly with ψ_s and leave
+  the solved shape invariant ⇒ α2 is exactly linear in ψ_s ⇒ the outer
+  fixed point ψ_s ← 4π²·α2/ψ_s converges in ~2 iterations.
+- Writeback: evaluate MXH surfaces analytically at ψn = ρ_k² (invert the
+  smooth ψn(ρ_veq) profile), plus the two edge sub-surfaces (δ_frac_2/3),
+  then `update_shot!(shot, surfaces, −ψ_s, flat_δ2, flat_δ3)` rebuilds all
+  FE fields/quadrature/FSAs and sets C to the exact flux-function form.
+- Validation (test_veq.jl): Ψaxis matches Picard to 0.4% at modest counts,
+  converging 0.46% → 0.11% as the representation is enriched.
 
 First and second derivatives (R_ρ, R_θ, R_ρρ, R_ρθ, R_θθ, same for Z) are
 analytic. Derived per-point fields (`gtt` = covariant g_θθ, `grt` = g_ρθ):

@@ -188,6 +188,7 @@ include("solve.jl")
 export solve
 
 include("veq.jl")
+include("veq_shot.jl")
 
 const document = Dict()
 document[Symbol(@__MODULE__)] = [:solve; [name for name in Base.names(@__MODULE__; all=false, imported=false) if (name != Symbol(@__MODULE__) && name != :solve)]]

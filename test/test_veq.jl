@@ -38,3 +38,28 @@ include(joinpath(@__DIR__, "veq_ref_case.jl"))
     @test it <= 15
     @test maximum(abs.(x .- X_SOLUTION)) < 1e-6
 end
+
+@testset "veq_solve! vs Picard" begin
+    Pp(x) = -1e5 * (1 - x^2)
+    FFp(x) = 3.0 * (1 - x^2)
+    bnd = TEQUILA.MXH(1.7, -0.05, 0.35, 1.8, 0.07, [0.04, -0.05, 0.02, 0.01], [0.64, 0.08, -0.09, 0.03])
+    Pbnd, Fbnd = 700.0, -3.5
+
+    shot_p = Shot(11, 11, bnd; dP_dψ=(Pp, :poloidal), F_dF_dψ=(FFp, :poloidal), Pbnd, Fbnd)
+    picard = solve(shot_p, 30; tol=1e-10)
+    _, _, Ψax_p = find_axis(picard)
+
+    shot_v = Shot(11, 11, bnd; dP_dψ=(Pp, :poloidal), F_dF_dψ=(FFp, :poloidal), Pbnd, Fbnd)
+    veq_solve!(shot_v; h_count=5, v_count=5, kappa_count=6, c0_count=5, psin_count=7,
+        c_counts=[4, 4, 3, 3], s_counts=[4, 4, 3, 3], Nr=16, Nt=32)
+    Rax_v, Zax_v, Ψax_v = find_axis(shot_v)
+
+    @test abs(Ψax_v - Ψax_p) / abs(Ψax_p) < 0.01
+    @test isapprox(Rax_v, 1.700, atol=0.01)
+    @test isapprox(Zax_v, -0.013, atol=0.01)
+    # interior surfaces track the Picard solution
+    for k in (4, 7, 10)
+        @test isapprox(shot_v.surfaces[3, k], picard.surfaces[3, k]; rtol=2e-2)  # ϵ
+        @test isapprox(shot_v.surfaces[4, k], picard.surfaces[4, k]; rtol=2e-2)  # κ
+    end
+end

@@ -834,7 +834,7 @@ function veq_solve(kern::VEQKernel;
             refresh = false
             issuccess(Jfac) || (λ = max(λ, 1e-8))
         end
-        δ = issuccess(Jfac) ? -(Jfac \ r) : -((Jm' * Jm + λ * I) \ (Jm' * r))
+        δ = issuccess(Jfac) ? -(Jfac \ r) : -((Jm' * Jm + λ * LinearAlgebra.I) \ (Jm' * r))
         # backtracking line search
         step = 1.0
         accepted = false
@@ -860,7 +860,7 @@ function veq_solve(kern::VEQKernel;
             if fresh
                 # even a fresh Jacobian failed a full backtrack: LM retry
                 λ = λ == 0.0 ? 1e-6 : 10.0 * λ
-                δ = -((Jm' * Jm + λ * I) \ (Jm' * r))
+                δ = -((Jm' * Jm + λ * LinearAlgebra.I) \ (Jm' * r))
                 @. xt = x + δ
                 veq_residual!(rt, xt, kern)
                 rtn = norm(rt)

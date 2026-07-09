@@ -18,15 +18,16 @@ const VEQ_J_FLOOR = 1.0e-6
 # ------------------------------------------------------------------
 
 """
-    VEQTopology(; h_count, v_count=0, kappa_count, psin_count, F_count=0,
-                  c_counts=Int[], s_counts=Int[], Nr, Nt,
+    VEQTopology(; h_count, v_count=0, kappa_count, c0_count=0, psin_count,
+                  F_count=0, c_counts=Int[], s_counts=Int[], Nr, Nt,
                   route=:PF, coordinate=:psin, nodes=:uniform,
                   ip_constraint=false, beta_constraint=false,
                   sample_count=51, K_max=nothing)
 
 Static solve topology: number of radial Chebyshev coefficients per active
 profile family, quadrature grid size, and source route. `c_counts`/`s_counts`
-are m=1-started (like `KernelTopology.s_counts` in veqpy).
+are m=1-started (like `KernelTopology.s_counts` in veqpy; note veqpy's
+c_counts are c0-started instead — here c0 has its own `c0_count`).
 """
 struct VEQTopology
     h_count::Int
@@ -225,6 +226,8 @@ struct VEQGrid
     rho::Vector{Float64}
     w::Vector{Float64}
     theta::Vector{Float64}
+    y::Vector{Float64}        # edge envelope 1 − ρ²
+    rho_pow::Matrix{Float64}  # row p+1 = ρ^p, powers 0..maxpow
     T::Matrix{Float64}
     T_r::Matrix{Float64}
     T_rr::Matrix{Float64}
@@ -241,13 +244,19 @@ function VEQGrid(top::VEQTopology)
     M_max = max(1, length(top.c_counts), length(top.s_counts))
     rho, w = veq_legendre_01(top.Nr)
     theta = [2π * j / top.Nt for j in 0:(top.Nt - 1)]
+    y = @. 1.0 - rho^2
+    maxpow = 2
+    for b in blocks
+        (b.kind === :c || b.kind === :s) && (maxpow = max(maxpow, b.power + 1))
+    end
+    rho_pow = [ρ^p for p in 0:maxpow, ρ in rho]
     T, T_r, T_rr = veq_chebyshev_tables(rho, L_max)
     cos_mt = [cos(m * t) for m in 0:M_max, t in theta]
     sin_mt = [sin(m * t) for m in 0:M_max, t in theta]
     D = veq_spectral_differentiator(rho)
     A = veq_spectral_accumulator(rho)
     n_fix = count(<(VEQ_FIX_RHO), rho)
-    return VEQGrid(rho, w, theta, T, T_r, T_rr, cos_mt, sin_mt, D, A, n_fix)
+    return VEQGrid(rho, w, theta, y, rho_pow, T, T_r, T_rr, cos_mt, sin_mt, D, A, n_fix)
 end
 
 # ------------------------------------------------------------------
@@ -320,8 +329,52 @@ function veq_spline_eval(coeff::AbstractMatrix{Float64}, q::Real)
     # through the local coordinate t
     iv = min(floor(Int, ForwardDiff.value(pos)), nint - 1)   # q==1 stays in last interval
     t = pos - iv
-    c = @view coeff[iv + 1, :]
-    return ((c[4] * t + c[3]) * t + c[2]) * t + c[1]
+    @inbounds return ((coeff[iv + 1, 4] * t + coeff[iv + 1, 3]) * t + coeff[iv + 1, 2]) * t + coeff[iv + 1, 1]
+end
+
+# ------------------------------------------------------------------
+# Preallocated per-eltype workspace (cached per Dual type for ForwardDiff)
+# ------------------------------------------------------------------
+
+struct VEQWork{T}
+    prof::Vector{Matrix{T}}      # per block: 3 x Nr (value, dρ, dρρ)
+    R::Matrix{T}
+    R_t::Matrix{T}
+    Z_t::Matrix{T}
+    J::Matrix{T}
+    JdivR::Matrix{T}
+    sin_tb::Matrix{T}
+    gttdivJR::Matrix{T}
+    gttdivJR_r::Matrix{T}
+    grtdivJR_t::Matrix{T}
+    G::Matrix{T}
+    GpR::Matrix{T}
+    GpZ::Matrix{T}
+    GpRs::Matrix{T}
+    V_r::Vector{T}
+    Kn::Vector{T}
+    Ln_r::Vector{T}
+    psin::Vector{T}
+    psin_r::Vector{T}
+    psin_rr::Vector{T}
+    heat::Vector{T}
+    curr::Vector{T}
+    integrand::Vector{T}
+    t_r::Vector{T}
+    Pn::Vector{T}
+    FFn::Vector{T}
+    collapsed::Vector{T}
+end
+
+function VEQWork{T}(nblocks::Int, Nr::Int, Nt::Int) where {T}
+    mat() = Matrix{T}(undef, Nr, Nt)
+    vec() = Vector{T}(undef, Nr)
+    return VEQWork{T}(
+        [Matrix{T}(undef, 3, Nr) for _ in 1:nblocks],
+        mat(), mat(), mat(), mat(), mat(), mat(), mat(), mat(), mat(),
+        mat(), mat(), mat(), mat(),
+        vec(), vec(), vec(), vec(), vec(), vec(), vec(), vec(), vec(), vec(),
+        vec(), vec(), vec())
 end
 
 # ------------------------------------------------------------------
@@ -337,6 +390,7 @@ struct VEQKernel
     heat_coeff::Matrix{Float64}   # spline of μ0-scaled heat samples
     curr_coeff::Matrix{Float64}
     x_size::Int
+    work::Dict{DataType,Any}      # VEQWork{T} cache; makes residual non-thread-safe
 end
 
 function VEQKernel(top::VEQTopology, boundary::VEQBoundary, source::VEQSource)
@@ -349,7 +403,13 @@ function VEQKernel(top::VEQTopology, boundary::VEQBoundary, source::VEQSource)
     heat_coeff = veq_spline_coefficients(μ₀ .* source.heat_profile)
     curr_coeff = veq_spline_coefficients(source.current_profile)
     return VEQKernel(top, grid, blocks, boundary, source, heat_coeff, curr_coeff,
-        sum(b.count for b in blocks))
+        sum(b.count for b in blocks), Dict{DataType,Any}())
+end
+
+function veq_getwork(kern::VEQKernel, ::Type{T}) where {T}
+    return get!(kern.work, T) do
+        VEQWork{T}(length(kern.blocks), kern.top.Nr, kern.top.Nt)
+    end::VEQWork{T}
 end
 
 veq_offset(b::VEQBlock, bd::VEQBoundary) =
@@ -366,27 +426,27 @@ veq_scale(b::VEQBlock, bd::VEQBoundary) = b.kind === :F ? bd.R0 * bd.B0 : 1.0
 # Stage A: profiles (value, dρ, dρρ at radial nodes)
 # ------------------------------------------------------------------
 
-"""Evaluate one profile block; returns (val, val_r, val_rr) length-Nr vectors."""
-function veq_profile(b::VEQBlock, x::AbstractVector, kern::VEQKernel, ::Type{TT}) where {TT}
+"""Fill `out` (3 x Nr: value, dρ, dρρ) for one profile block."""
+function veq_profile!(out::AbstractMatrix, b::VEQBlock, x::AbstractVector, kern::VEQKernel)
     g = kern.grid
     n = length(g.rho)
-    val = zeros(TT, n); val_r = zeros(TT, n); val_rr = zeros(TT, n)
     offset = veq_offset(b, kern.boundary)
     scale = veq_scale(b, kern.boundary)
-    for i in 1:n
+    T0 = eltype(out)
+    @inbounds for i in 1:n
         ρ = g.rho[i]
         # Chebyshev series with edge envelope y = 1 − ρ²
-        series = zero(TT); series_r = zero(TT); series_rr = zero(TT)
+        series = zero(T0); series_r = zero(T0); series_rr = zero(T0)
         for (l, xi) in enumerate(b.xind)
             c = x[xi]
             series += c * g.T[l, i]
             series_r += c * g.T_r[l, i]
             series_rr += c * g.T_rr[l, i]
         end
-        env = 1.0 - ρ^2
+        env = g.y[i]
         base = env * series
         base_r = -2.0 * ρ * series + env * series_r
-        base_rr = -2.0 * series + 2.0 * (-2.0 * ρ) * series_r + env * series_rr
+        base_rr = -2.0 * series - 4.0 * ρ * series_r + env * series_rr
         amp = offset + base
         amp_r = base_r
         amp_rr = base_rr
@@ -398,14 +458,14 @@ function veq_profile(b::VEQBlock, x::AbstractVector, kern::VEQKernel, ::Type{TT}
             amp = av
         end
         k = b.power
-        rp = ρ^k
-        rp_r = k == 0 ? 0.0 : k * ρ^(k - 1)
-        rp_rr = k <= 1 ? 0.0 : k * (k - 1) * ρ^(k - 2)
-        val[i] = scale * rp * amp
-        val_r[i] = scale * (rp_r * amp + rp * amp_r)
-        val_rr[i] = scale * (rp_rr * amp + 2.0 * rp_r * amp_r + rp * amp_rr)
+        rp = g.rho_pow[k + 1, i]
+        rp_r = k == 0 ? 0.0 : k * g.rho_pow[k, i]
+        rp_rr = k <= 1 ? 0.0 : k * (k - 1) * g.rho_pow[k - 1, i]
+        out[1, i] = scale * rp * amp
+        out[2, i] = scale * (rp_r * amp + rp * amp_r)
+        out[3, i] = scale * (rp_rr * amp + 2.0 * rp_r * amp_r + rp * amp_rr)
     end
-    return val, val_r, val_rr
+    return out
 end
 
 # ------------------------------------------------------------------
@@ -448,77 +508,130 @@ function veq_regularize_psin_r!(p::AbstractVector, rho::Vector{Float64}, n_fix::
 end
 
 # ------------------------------------------------------------------
-# Residual (fused stages B, C, D)
+# Residual helpers (top-level functions: no closures, no boxing)
+# ------------------------------------------------------------------
+
+function veq_rowsum!(dest::AbstractVector, M::AbstractMatrix)
+    @inbounds for i in axes(M, 1)
+        s = zero(eltype(M))
+        for j in axes(M, 2)
+            s += M[i, j]
+        end
+        dest[i] = s
+    end
+    return dest
+end
+
+function veq_rowsum_w!(dest::AbstractVector, M::AbstractMatrix, wt::AbstractVector)
+    @inbounds for i in axes(M, 1)
+        s = zero(eltype(M))
+        for j in axes(M, 2)
+            s += M[i, j] * wt[j]
+        end
+        dest[i] = s
+    end
+    return dest
+end
+
+"""Project θ-collapsed residual onto the block's Chebyshev test functions."""
+function veq_project!(out::AbstractVector, b::VEQBlock, T::Matrix{Float64},
+    collapsed::AbstractVector, radial::AbstractVector, y::Vector{Float64},
+    w::Vector{Float64}, scalar::Float64)
+    @inbounds for (l, xi) in enumerate(b.xind)
+        acc = zero(eltype(collapsed))
+        for i in eachindex(collapsed)
+            acc += T[l, i] * collapsed[i] * radial[i] * y[i] * w[i]
+        end
+        out[xi] = acc * scalar
+    end
+    return out
+end
+
+# ------------------------------------------------------------------
+# Residual (fused stages A-D)
 # ------------------------------------------------------------------
 
 """
     veq_residual!(out, x, kern::VEQKernel)
 
 Fused profile/geometry/source/residual evaluation for packed state `x`.
-Generic in eltype for ForwardDiff. Returns `(out, α1, α2)`.
+Generic in eltype for ForwardDiff (workspaces are cached per eltype, so this
+is not thread-safe for concurrent calls on one kernel).
+Returns `(out, α1, α2)`.
 """
 function veq_residual!(out::AbstractVector, x::AbstractVector, kern::VEQKernel)
     TT = promote_type(eltype(out), eltype(x))
+    wk = veq_getwork(kern, TT)
+    α1, α2 = veq_residual_core!(out, x, kern, wk)
+    return out, α1, α2
+end
+
+function veq_residual(x::AbstractVector, kern::VEQKernel)
+    out = Vector{promote_type(Float64, eltype(x))}(undef, kern.x_size)
+    veq_residual!(out, x, kern)
+    return out
+end
+
+function veq_residual_core!(out::AbstractVector, x::AbstractVector,
+    kern::VEQKernel, wk::VEQWork{TT}) where {TT}
     g = kern.grid
     bd = kern.boundary
     top = kern.top
     Nr, Nt = top.Nr, top.Nt
-    a, R0, Z0, B0 = bd.a, bd.R0, bd.Z0, bd.B0
+    a, R0, B0 = bd.a, bd.R0, bd.B0
 
-    # blocks are in canonical order: h, v, k, c0, c_m..., s_m..., psin, F
+    # blocks are in canonical order: h=1, v=2, k=3, c0=4, c_m..., s_m..., psin, F
     blocks = kern.blocks
     nc = length(top.c_counts)
     ns = length(top.s_counts)
+    c_range = 5:(4 + nc)
+    s_range = (5 + nc):(4 + nc + ns)
+    ipsin = length(blocks) - 1
 
     # --- Stage A: profiles
-    h, h_r, h_rr = veq_profile(blocks[1], x, kern, TT)
-    v, v_r, v_rr = veq_profile(blocks[2], x, kern, TT)
-    k, k_r, k_rr = veq_profile(blocks[3], x, kern, TT)
-    c0, c0_r, c0_rr = veq_profile(blocks[4], x, kern, TT)
-    cblocks = blocks[5:(4 + nc)]
-    sblocks = blocks[(5 + nc):(4 + nc + ns)]
-    cprof = [veq_profile(b, x, kern, TT) for b in cblocks]
-    sprof = [veq_profile(b, x, kern, TT) for b in sblocks]
-    psin_prof, psin_prof_r, psin_prof_rr = veq_profile(blocks[end - 1], x, kern, TT)
+    @inbounds for (bi, b) in enumerate(blocks)
+        bi == length(blocks) && b.count == 0 && continue  # passive F unused
+        veq_profile!(wk.prof[bi], b, x, kern)
+    end
+    ph = wk.prof[1]; pv = wk.prof[2]; pk = wk.prof[3]; pc0 = wk.prof[4]
 
     # --- Stage B: geometry per point + radial moments
-    R = Matrix{TT}(undef, Nr, Nt); R_t = similar(R); Z_t = similar(R)
-    J = similar(R); JdivR = similar(R); sin_tb = similar(R)
-    gttdivJR = similar(R); gttdivJR_r = similar(R); grtdivJR_t = similar(R)
-    V_r = zeros(TT, Nr); Kn = zeros(TT, Nr); Ln_r = zeros(TT, Nr)
-
-    for i in 1:Nr
+    @inbounds for i in 1:Nr
         ρ = g.rho[i]
+        h_i = ph[1, i]; h_r_i = ph[2, i]; h_rr_i = ph[3, i]
+        v_r_i = pv[2, i]; v_rr_i = pv[3, i]
+        k_i = pk[1, i]; k_r_i = pk[2, i]; k_rr_i = pk[3, i]
         sum_JR = zero(TT); sum_gtt = zero(TT); sum_JdivR = zero(TT)
         for j in 1:Nt
-            θ = g.theta[j]
             sin_t = g.sin_mt[2, j]; cos_t = g.cos_mt[2, j]
-            tb = θ + c0[i]; tb_r = c0_r[i]; tb_rr = c0_rr[i]
+            tb = g.theta[j] + pc0[1, i]; tb_r = pc0[2, i]; tb_rr = pc0[3, i]
             tb_t = one(TT); tb_rt = zero(TT); tb_tt = zero(TT)
-            for (bm, (cv, cvr, cvrr)) in zip(cblocks, cprof)
-                m = bm.order
+            for bi in c_range
+                m = blocks[bi].order
+                pm = wk.prof[bi]
                 cm = g.cos_mt[m + 1, j]; sm = g.sin_mt[m + 1, j]
-                tb += cv[i] * cm; tb_r += cvr[i] * cm; tb_rr += cvrr[i] * cm
-                tb_t += -m * cv[i] * sm; tb_rt += -m * cvr[i] * sm; tb_tt += -m^2 * cv[i] * cm
+                tb += pm[1, i] * cm; tb_r += pm[2, i] * cm; tb_rr += pm[3, i] * cm
+                tb_t -= m * pm[1, i] * sm; tb_rt -= m * pm[2, i] * sm; tb_tt -= m^2 * pm[1, i] * cm
             end
-            for (bm, (sv, svr, svrr)) in zip(sblocks, sprof)
-                m = bm.order
+            for bi in s_range
+                m = blocks[bi].order
+                pm = wk.prof[bi]
                 cm = g.cos_mt[m + 1, j]; sm = g.sin_mt[m + 1, j]
-                tb += sv[i] * sm; tb_r += svr[i] * sm; tb_rr += svrr[i] * sm
-                tb_t += m * sv[i] * cm; tb_rt += m * svr[i] * cm; tb_tt += -m^2 * sv[i] * sm
+                tb += pm[1, i] * sm; tb_r += pm[2, i] * sm; tb_rr += pm[3, i] * sm
+                tb_t += m * pm[1, i] * cm; tb_rt += m * pm[2, i] * cm; tb_tt -= m^2 * pm[1, i] * sm
             end
             stb, ctb = sincos(tb)
-            R_ij = R0 + a * (h[i] + ρ * ctb)
-            R_r = a * (h_r[i] + ctb - ρ * stb * tb_r)
-            R_rr = a * (h_rr[i] - 2.0 * stb * tb_r - ρ * (ctb * tb_r^2 + stb * tb_rr))
+            R_ij = R0 + a * (h_i + ρ * ctb)
+            R_r = a * (h_r_i + ctb - ρ * stb * tb_r)
+            R_rr = a * (h_rr_i - 2.0 * stb * tb_r - ρ * (ctb * tb_r^2 + stb * tb_rr))
             R_t_ij = -a * ρ * stb * tb_t
             R_rt = -a * (stb * tb_t + ρ * (ctb * tb_r * tb_t + stb * tb_rt))
             R_tt = -a * ρ * (ctb * tb_t^2 + stb * tb_tt)
-            Z_r = a * (v_r[i] - (k[i] + ρ * k_r[i]) * sin_t)
-            Z_t_ij = -a * ρ * k[i] * cos_t
-            Z_rr = a * (v_rr[i] - (2.0 * k_r[i] + ρ * k_rr[i]) * sin_t)
-            Z_rt = -a * (k[i] + ρ * k_r[i]) * cos_t
-            Z_tt = a * ρ * k[i] * sin_t
+            Z_r = a * (v_r_i - (k_i + ρ * k_r_i) * sin_t)
+            Z_t_ij = -a * ρ * k_i * cos_t
+            Z_rr = a * (v_rr_i - (2.0 * k_r_i + ρ * k_rr_i) * sin_t)
+            Z_rt = -a * (k_i + ρ * k_r_i) * cos_t
+            Z_tt = a * ρ * k_i * sin_t
 
             J_ij = R_t_ij * Z_r - R_r * Z_t_ij
             J_ij = max(J_ij, VEQ_J_FLOOR)
@@ -534,58 +647,93 @@ function veq_residual!(out::AbstractVector, x::AbstractVector, kern::VEQKernel)
             gtt_r = 2.0 * (R_t_ij * R_rt + Z_t_ij * Z_rt)
             invJR = 1.0 / JR
 
-            R[i, j] = R_ij; R_t[i, j] = R_t_ij; Z_t[i, j] = Z_t_ij
-            J[i, j] = J_ij; JdivR[i, j] = J_ij / R_ij; sin_tb[i, j] = stb
-            gttdivJR[i, j] = gtt * invJR
-            gttdivJR_r[i, j] = gtt_r * invJR - gtt * JR_r * invJR^2
-            grtdivJR_t[i, j] = (grt_t - grt * JR_t * invJR) * invJR
+            wk.R[i, j] = R_ij; wk.R_t[i, j] = R_t_ij; wk.Z_t[i, j] = Z_t_ij
+            wk.J[i, j] = J_ij; wk.JdivR[i, j] = J_ij / R_ij; wk.sin_tb[i, j] = stb
+            wk.gttdivJR[i, j] = gtt * invJR
+            wk.gttdivJR_r[i, j] = gtt_r * invJR - gtt * JR_r * invJR^2
+            wk.grtdivJR_t[i, j] = (grt_t - grt * JR_t * invJR) * invJR
 
             sum_JR += JR; sum_gtt += gtt * invJR; sum_JdivR += J_ij / R_ij
         end
-        V_r[i] = sum_JR * (2π / Nt) * 2π
-        Kn[i] = sum_gtt / Nt
-        Ln_r[i] = sum_JdivR / Nt
+        wk.V_r[i] = sum_JR * (2π / Nt) * 2π
+        wk.Kn[i] = sum_gtt / Nt
+        wk.Ln_r[i] = sum_JdivR / Nt
     end
 
     # --- Stage C: source (PF, psin coordinate, uniform nodes; psin family active)
     # Residual root fields come from the x psin block with axis regularization.
-    psin_r = copy(psin_prof_r)
-    veq_regularize_psin_r!(psin_r, g.rho, g.n_axis_fix)
-    psin_rr = g.D * psin_r
-    psin = g.A * psin_r
-    let o = psin[1], s = psin[end] - psin[1]
-        abs(s) < 1e-12 && error("psin does not span a valid normalized flux interval")
-        @. psin = (psin - o) / s
-        psin[1] = zero(TT); psin[end] = one(TT)
+    pp = wk.prof[ipsin]
+    @inbounds for i in 1:Nr
+        wk.psin_r[i] = pp[2, i]
     end
-    heat = [veq_spline_eval(kern.heat_coeff, psin[i]) for i in 1:Nr]   # μ0-scaled
-    curr = [veq_spline_eval(kern.curr_coeff, psin[i]) for i in 1:Nr]
+    veq_regularize_psin_r!(wk.psin_r, g.rho, g.n_axis_fix)
+    mul!(wk.psin_rr, g.D, wk.psin_r)
+    mul!(wk.psin, g.A, wk.psin_r)
+    let o = wk.psin[1], s = wk.psin[end] - wk.psin[1]
+        abs(s) < 1e-12 && error("psin does not span a valid normalized flux interval")
+        @inbounds for i in 1:Nr
+            wk.psin[i] = (wk.psin[i] - o) / s
+        end
+        wk.psin[1] = zero(TT); wk.psin[end] = one(TT)
+    end
+    @inbounds for i in 1:Nr
+        wk.heat[i] = veq_spline_eval(kern.heat_coeff, wk.psin[i])   # μ0-scaled
+        wk.curr[i] = veq_spline_eval(kern.curr_coeff, wk.psin[i])
+    end
 
     # FSA-derived target ψn' (used only for the α2 magnitude via c2)
-    integrand = [curr[i] * Ln_r[i] + V_r[i] * heat[i] / (4π^2) for i in 1:Nr]
-    t_r = g.A * integrand
-    @. t_r = -t_r / Kn
-    tsign = sum(t_r[i] * g.w[i] for i in 1:Nr) < 0.0 ? -1.0 : 1.0
-    tsign < 0.0 && (t_r .*= -1.0)
-    veq_regularize_psin_r!(t_r, g.rho, g.n_axis_fix)
-    c2 = sum(t_r[i] * g.w[i] for i in 1:Nr)
-    t_r ./= c2
+    @inbounds for i in 1:Nr
+        wk.integrand[i] = wk.curr[i] * wk.Ln_r[i] + wk.V_r[i] * wk.heat[i] / (4π^2)
+    end
+    mul!(wk.t_r, g.A, wk.integrand)
+    @inbounds for i in 1:Nr
+        wk.t_r[i] = -wk.t_r[i] / wk.Kn[i]
+    end
+    tsum = zero(TT)
+    @inbounds for i in 1:Nr
+        tsum += wk.t_r[i] * g.w[i]
+    end
+    tsign = tsum < 0.0 ? -1.0 : 1.0
+    if tsign < 0.0
+        @inbounds for i in 1:Nr
+            wk.t_r[i] = -wk.t_r[i]
+        end
+    end
+    veq_regularize_psin_r!(wk.t_r, g.rho, g.n_axis_fix)
+    c2 = zero(TT)
+    @inbounds for i in 1:Nr
+        c2 += wk.t_r[i] * g.w[i]
+    end
+    @inbounds for i in 1:Nr
+        wk.t_r[i] /= c2
+    end
 
     has_Ip = !isnan(kern.source.Ip)
     has_beta = !isnan(kern.source.beta)
-    local α1::TT, α2::TT
-    local Pn::Vector{TT}, FFn::Vector{TT}
+    α1 = zero(TT)
+    α2 = zero(TT)
     if !has_Ip && !has_beta
         α2 = tsign * c2
-        α1 = -sum(heat[i] * t_r[i] * g.w[i] for i in 1:Nr)
-        Pn = heat ./ α1
-        FFn = curr ./ α1
-        veq_regularize_axis_even!(FFn, g.rho, g.n_axis_fix)
+        acc = zero(TT)
+        @inbounds for i in 1:Nr
+            acc += wk.heat[i] * wk.t_r[i] * g.w[i]
+        end
+        α1 = -acc
+        @inbounds for i in 1:Nr
+            wk.Pn[i] = wk.heat[i] / α1
+            wk.FFn[i] = wk.curr[i] / α1
+        end
+        veq_regularize_axis_even!(wk.FFn, g.rho, g.n_axis_fix)
     elseif has_Ip && !has_beta
-        Pn = copy(heat)
-        FFn = copy(curr)
-        veq_regularize_axis_even!(FFn, g.rho, g.n_axis_fix)
-        G1n_integral = sum(g.w[i] * (2π * Ln_r[i] * FFn[i] + V_r[i] * Pn[i] / (2π)) for i in 1:Nr)
+        @inbounds for i in 1:Nr
+            wk.Pn[i] = wk.heat[i]
+            wk.FFn[i] = wk.curr[i]
+        end
+        veq_regularize_axis_even!(wk.FFn, g.rho, g.n_axis_fix)
+        G1n_integral = zero(TT)
+        @inbounds for i in 1:Nr
+            G1n_integral += g.w[i] * (2π * wk.Ln_r[i] * wk.FFn[i] + wk.V_r[i] * wk.Pn[i] / (2π))
+        end
         # veqpy materializes current-like constraints with μ0 scaling
         α1 = -μ₀ * kern.source.Ip / G1n_integral
         α2 = c2 * α1
@@ -594,68 +742,58 @@ function veq_residual!(out::AbstractVector, x::AbstractVector, kern::VEQKernel)
     end
 
     # --- Stage D: residual fields and variational projections
-    G = Matrix{TT}(undef, Nr, Nt)
-    Gpsin_R = similar(G); Gpsin_Z = similar(G); Gpsin_R_stb = similar(G)
-    for i in 1:Nr, j in 1:Nt
-        invJ = 1.0 / J[i, j]
-        ψR = -Z_t[i, j] * invJ * psin_r[i]
-        ψZ = R_t[i, j] * invJ * psin_r[i]
-        G1 = JdivR[i, j] * (FFn[i] + R[i, j]^2 * Pn[i])
-        G2 = gttdivJR[i, j] * psin_rr[i] + (gttdivJR_r[i, j] - grtdivJR_t[i, j]) * psin_r[i]
+    @inbounds for i in 1:Nr, j in 1:Nt
+        invJ = 1.0 / wk.J[i, j]
+        ψR = -wk.Z_t[i, j] * invJ * wk.psin_r[i]
+        ψZ = wk.R_t[i, j] * invJ * wk.psin_r[i]
+        G1 = wk.JdivR[i, j] * (wk.FFn[i] + wk.R[i, j]^2 * wk.Pn[i])
+        G2 = wk.gttdivJR[i, j] * wk.psin_rr[i] +
+             (wk.gttdivJR_r[i, j] - wk.grtdivJR_t[i, j]) * wk.psin_r[i]
         Gij = α1 * G1 + α2 * G2
-        G[i, j] = Gij
-        Gpsin_R[i, j] = Gij * ψR
-        Gpsin_Z[i, j] = Gij * ψZ
-        Gpsin_R_stb[i, j] = Gij * ψR * sin_tb[i, j]
+        wk.G[i, j] = Gij
+        wk.GpR[i, j] = Gij * ψR
+        wk.GpZ[i, j] = Gij * ψZ
+        wk.GpRs[i, j] = Gij * ψR * wk.sin_tb[i, j]
     end
 
     base = 2π / Nt
-    rowsum(M) = [sum(@view M[i, :]) for i in 1:Nr]
-    rowsum_w(M, wt) = [sum(M[i, j] * wt[j] for j in 1:Nt) for i in 1:Nr]
-
-    function project!(b::VEQBlock, collapsed::AbstractVector, radial::AbstractVector, scalar::Float64)
-        for (l, xi) in enumerate(b.xind)
-            acc = zero(TT)
-            for i in 1:Nr
-                acc += g.T[l, i] * collapsed[i] * radial[i] * (1.0 - g.rho[i]^2) * g.w[i]
-            end
-            out[xi] = acc * scalar
-        end
-    end
-
-    ones_r = ones(Nr)
-    rho1 = g.rho
+    ones_r = @view g.rho_pow[1, :]
+    rho1 = @view g.rho_pow[2, :]
+    rho2 = @view g.rho_pow[3, :]
+    sin_t_row = @view g.sin_mt[2, :]
     for b in blocks
         b.count == 0 && continue
         if b.kind === :h
-            project!(b, rowsum(Gpsin_R), ones_r, base * a)
+            veq_rowsum!(wk.collapsed, wk.GpR)
+            veq_project!(out, b, g.T, wk.collapsed, ones_r, g.y, g.w, base * a)
         elseif b.kind === :v
-            project!(b, rowsum(Gpsin_Z), ones_r, base * a)
+            veq_rowsum!(wk.collapsed, wk.GpZ)
+            veq_project!(out, b, g.T, wk.collapsed, ones_r, g.y, g.w, base * a)
         elseif b.kind === :k
-            project!(b, rowsum_w(Gpsin_Z, @view g.sin_mt[2, :]), rho1, -base * a)
+            veq_rowsum_w!(wk.collapsed, wk.GpZ, sin_t_row)
+            veq_project!(out, b, g.T, wk.collapsed, rho1, g.y, g.w, -base * a)
         elseif b.kind === :c0
-            project!(b, rowsum(Gpsin_R_stb), rho1, -base * a)
+            veq_rowsum!(wk.collapsed, wk.GpRs)
+            veq_project!(out, b, g.T, wk.collapsed, rho1, g.y, g.w, -base * a)
         elseif b.kind === :c
-            project!(b, rowsum_w(Gpsin_R_stb, @view g.cos_mt[b.order + 1, :]),
-                g.rho .^ (b.power + 1), -base * a)
+            veq_rowsum_w!(wk.collapsed, wk.GpRs, @view g.cos_mt[b.order + 1, :])
+            veq_project!(out, b, g.T, wk.collapsed,
+                (@view g.rho_pow[b.power + 2, :]), g.y, g.w, -base * a)
         elseif b.kind === :s
-            project!(b, rowsum_w(Gpsin_R_stb, @view g.sin_mt[b.order + 1, :]),
-                g.rho .^ (b.power + 1), -base * a)
+            veq_rowsum_w!(wk.collapsed, wk.GpRs, @view g.sin_mt[b.order + 1, :])
+            veq_project!(out, b, g.T, wk.collapsed,
+                (@view g.rho_pow[b.power + 2, :]), g.y, g.w, -base * a)
         elseif b.kind === :psin
-            project!(b, rowsum(G), g.rho .^ 2, base)
+            veq_rowsum!(wk.collapsed, wk.G)
+            veq_project!(out, b, g.T, wk.collapsed, rho2, g.y, g.w, base)
         elseif b.kind === :F
-            # F block projects G against y²·T with (R0·B0)² scale; radial slot
-            # carries the second envelope factor y.
-            project!(b, rowsum(G), 1.0 .- rho1 .^ 2, base * (R0 * B0)^2)
+            # F block projects G against y²·T with (R0·B0)² scale; the radial
+            # slot carries the second envelope factor y.
+            veq_rowsum!(wk.collapsed, wk.G)
+            veq_project!(out, b, g.T, wk.collapsed, g.y, g.y, g.w, base * (R0 * B0)^2)
         end
     end
-    return out, α1, α2
-end
-
-function veq_residual(x::AbstractVector, kern::VEQKernel)
-    out = Vector{promote_type(Float64, eltype(x))}(undef, kern.x_size)
-    veq_residual!(out, x, kern)
-    return out
+    return α1, α2
 end
 
 # ------------------------------------------------------------------
@@ -665,7 +803,9 @@ end
 """
     veq_solve(kern::VEQKernel; x0=zeros(kern.x_size), tol=1e-9, maxiter=50)
 
-Damped Newton on the packed residual with ForwardDiff Jacobian.
+Modified Newton on the packed residual with ForwardDiff Jacobian: the
+LU-factorized Jacobian is reused across iterations while the residual keeps
+contracting and refreshed when contraction stalls.
 Returns `(x, converged, resnorm, iterations)`.
 """
 function veq_solve(kern::VEQKernel;
@@ -678,12 +818,10 @@ function veq_solve(kern::VEQKernel;
     f!(out, xx) = (veq_residual!(out, xx, kern); out)
     Jcfg = ForwardDiff.JacobianConfig(f!, r, x)
     Jm = zeros(kern.x_size, kern.x_size)
+    xt = similar(x)
+    rt = similar(r)
     it = 0
     λ = 0.0
-    # Modified Newton: the Jacobian (and its factorization) is reused across
-    # iterations while the residual keeps contracting well; it is refreshed
-    # when the contraction stalls. Full steps with a fresh Jacobian give
-    # quadratic convergence; stale steps still contract strongly here.
     local Jfac
     fresh = false
     refresh = true
@@ -702,12 +840,12 @@ function veq_solve(kern::VEQKernel;
         accepted = false
         contraction = 1.0
         for _ in 1:12
-            xt = x .+ step .* δ
-            rt = veq_residual(xt, kern)
+            @. xt = x + step * δ
+            veq_residual!(rt, xt, kern)
             rtn = norm(rt)
             if isfinite(rtn) && rtn < rn
                 contraction = rtn / rn
-                x, r, rn = xt, rt, rtn
+                copyto!(x, xt); copyto!(r, rt); rn = rtn
                 accepted = true
                 λ = 0.1 * λ
                 break
@@ -723,11 +861,11 @@ function veq_solve(kern::VEQKernel;
                 # even a fresh Jacobian failed a full backtrack: LM retry
                 λ = λ == 0.0 ? 1e-6 : 10.0 * λ
                 δ = -((Jm' * Jm + λ * I) \ (Jm' * r))
-                xt = x .+ δ
-                rt = veq_residual(xt, kern)
+                @. xt = x + δ
+                veq_residual!(rt, xt, kern)
                 rtn = norm(rt)
                 if isfinite(rtn) && rtn < rn
-                    x, r, rn = xt, rt, rtn
+                    copyto!(x, xt); copyto!(r, rt); rn = rtn
                 else
                     break
                 end

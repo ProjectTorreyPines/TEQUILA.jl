@@ -57,12 +57,12 @@ function VEQBoundary(shot::Shot)
         c_offsets, s_offsets)
 end
 
-"""Rebuild kernel with new source samples, reusing the grid and layout."""
+"""Rebuild kernel with new source samples, reusing the grid, layout, and workspace cache."""
 veq_with_source(kern::VEQKernel, source::VEQSource) = VEQKernel(
     kern.top, kern.grid, kern.blocks, kern.boundary, source,
     veq_spline_coefficients(μ₀ .* source.heat_profile),
     veq_spline_coefficients(source.current_profile),
-    kern.x_size)
+    kern.x_size, kern.work)
 
 function veq_source_samples(shot::Shot, ψ_s::Real, sample_count::Int)
     shot.dP_dψ !== nothing || error("veq_solve! requires dP_dψ (P and current-based inputs not yet supported)")

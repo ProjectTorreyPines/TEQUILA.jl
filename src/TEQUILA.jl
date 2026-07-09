@@ -187,6 +187,8 @@ export FSA, Vprime, fsa_invR2, fsa_invR, Ip
 include("solve.jl")
 export solve
 
+include("veq.jl")
+
 const document = Dict()
 document[Symbol(@__MODULE__)] = [:solve; [name for name in Base.names(@__MODULE__; all=false, imported=false) if (name != Symbol(@__MODULE__) && name != :solve)]]
 

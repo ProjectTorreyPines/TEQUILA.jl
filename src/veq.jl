@@ -465,19 +465,21 @@ function veq_residual!(out::AbstractVector, x::AbstractVector, kern::VEQKernel)
     Nr, Nt = top.Nr, top.Nt
     a, R0, Z0, B0 = bd.a, bd.R0, bd.Z0, bd.B0
 
+    # blocks are in canonical order: h, v, k, c0, c_m..., s_m..., psin, F
     blocks = kern.blocks
-    bidx = Dict(b.name => b for b in blocks)
+    nc = length(top.c_counts)
+    ns = length(top.s_counts)
 
     # --- Stage A: profiles
-    h, h_r, h_rr = veq_profile(bidx[:h], x, kern, TT)
-    v, v_r, v_rr = veq_profile(bidx[:v], x, kern, TT)
-    k, k_r, k_rr = veq_profile(bidx[:k], x, kern, TT)
-    c0, c0_r, c0_rr = veq_profile(bidx[:c0], x, kern, TT)
-    cblocks = [b for b in blocks if b.kind === :c]
-    sblocks = [b for b in blocks if b.kind === :s]
+    h, h_r, h_rr = veq_profile(blocks[1], x, kern, TT)
+    v, v_r, v_rr = veq_profile(blocks[2], x, kern, TT)
+    k, k_r, k_rr = veq_profile(blocks[3], x, kern, TT)
+    c0, c0_r, c0_rr = veq_profile(blocks[4], x, kern, TT)
+    cblocks = blocks[5:(4 + nc)]
+    sblocks = blocks[(5 + nc):(4 + nc + ns)]
     cprof = [veq_profile(b, x, kern, TT) for b in cblocks]
     sprof = [veq_profile(b, x, kern, TT) for b in sblocks]
-    psin_prof, psin_prof_r, psin_prof_rr = veq_profile(bidx[:psin], x, kern, TT)
+    psin_prof, psin_prof_r, psin_prof_rr = veq_profile(blocks[end - 1], x, kern, TT)
 
     # --- Stage B: geometry per point + radial moments
     R = Matrix{TT}(undef, Nr, Nt); R_t = similar(R); Z_t = similar(R)
@@ -678,23 +680,33 @@ function veq_solve(kern::VEQKernel;
     Jm = zeros(kern.x_size, kern.x_size)
     it = 0
     λ = 0.0
+    # Modified Newton: the Jacobian (and its factorization) is reused across
+    # iterations while the residual keeps contracting well; it is refreshed
+    # when the contraction stalls. Full steps with a fresh Jacobian give
+    # quadratic convergence; stale steps still contract strongly here.
+    local Jfac
+    fresh = false
+    refresh = true
     while rn > tol && it < maxiter
         it += 1
-        ForwardDiff.jacobian!(Jm, f!, r, x, Jcfg)
-        δ = try
-            -(Jm \ r)
-        catch
-            λ = max(λ, 1e-8)
-            -((Jm' * Jm + λ * I) \ (Jm' * r))
+        if refresh
+            ForwardDiff.jacobian!(Jm, f!, r, x, Jcfg)
+            Jfac = lu!(copy(Jm); check=false)
+            fresh = true
+            refresh = false
+            issuccess(Jfac) || (λ = max(λ, 1e-8))
         end
+        δ = issuccess(Jfac) ? -(Jfac \ r) : -((Jm' * Jm + λ * I) \ (Jm' * r))
         # backtracking line search
         step = 1.0
         accepted = false
+        contraction = 1.0
         for _ in 1:12
             xt = x .+ step .* δ
             rt = veq_residual(xt, kern)
             rtn = norm(rt)
             if isfinite(rtn) && rtn < rn
+                contraction = rtn / rn
                 x, r, rn = xt, rt, rtn
                 accepted = true
                 λ = 0.1 * λ
@@ -702,17 +714,26 @@ function veq_solve(kern::VEQKernel;
             end
             step *= 0.5
         end
-        if !accepted
-            # steepest-descent-flavored LM retry
-            λ = λ == 0.0 ? 1e-6 : 10.0 * λ
-            δ = -((Jm' * Jm + λ * I) \ (Jm' * r))
-            xt = x .+ δ
-            rt = veq_residual(xt, kern)
-            rtn = norm(rt)
-            if isfinite(rtn) && rtn < rn
-                x, r, rn = xt, rt, rtn
+        if accepted
+            # stale Jacobian and weak contraction -> refresh next iteration
+            (!fresh && (contraction > 0.2 || step < 1.0)) && (refresh = true)
+            fresh = false
+        else
+            if fresh
+                # even a fresh Jacobian failed a full backtrack: LM retry
+                λ = λ == 0.0 ? 1e-6 : 10.0 * λ
+                δ = -((Jm' * Jm + λ * I) \ (Jm' * r))
+                xt = x .+ δ
+                rt = veq_residual(xt, kern)
+                rtn = norm(rt)
+                if isfinite(rtn) && rtn < rn
+                    x, r, rn = xt, rt, rtn
+                else
+                    break
+                end
             else
-                break
+                refresh = true
+                it -= 1   # retry this iteration with a fresh Jacobian
             end
         end
     end

@@ -81,6 +81,22 @@ so Shot boundary surfaces map to VEQBoundary with no sign flips.)
   FE fields/quadrature/FSAs and sets C to the exact flux-function form.
 - Validation (test_veq.jl): Ψaxis matches Picard to 0.4% at modest counts,
   converging 0.46% → 0.11% as the representation is enriched.
+- **Equilibrium-dependent inputs** (P, Jt, Jt_R, :toroidal-grid profiles,
+  Ip_target — the FUSE ActorTEQUILA pattern): converted with TEQUILA's own
+  `Pprime`/`FFprime` after `update_profiles!`, so the outer loop writes the
+  solution back into the Shot every iteration (surfaces + Ψ + FSAs + ρtor)
+  before resampling, and applies `scale_Ip!` in the same
+  `update_profiles! → scale_Ip!` order as the Picard loop (update_profile!
+  re-materializes :toroidal fe from orig, which would wipe a preceding
+  rescale). Convergence measure stays ψ_s stationarity — the Ip rescale
+  factor converges to a constant (≠ 1 on :toroidal grids, where I_c reverts
+  to the unscaled profile each iteration), not to zero correction.
+- Uninitialized Shots (Ψ ≡ 0) get a flux-function Ψ seed with
+  sign(ψ_s) = sign(Ip), |ψ_s| ~ μ0·Ip·R0 (TEQUILA convention: Ip > 0 ⇒
+  Ψaxis < 0, verified vs Picard). Only the sign matters; for pure
+  dP_dψ/F_dF_dψ inputs even the sign is irrelevant (α2 linear in ψ_s).
+- Validation of the P/Jt/Ip route (test_veq.jl): Ψaxis within 0.8% of
+  Picard, Ip exact to 1e-6, ~12 outer its; 0.16 s vs 21.7 s warm (N=M=11).
 
 First and second derivatives (R_ρ, R_θ, R_ρρ, R_ρθ, R_θθ, same for Z) are
 analytic. Derived per-point fields (`gtt` = covariant g_θθ, `grt` = g_ρθ):

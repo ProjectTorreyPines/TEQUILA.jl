@@ -64,20 +64,53 @@ veq_with_source(kern::VEQKernel, source::VEQSource) = VEQKernel(
     veq_spline_coefficients(source.current_profile),
     kern.x_size, kern.work)
 
+# NB: callers must run update_profiles! (and scale_Ip!, if constrained) first,
+# in that order — update_profile! re-materializes :toroidal fe from orig, which
+# would wipe a preceding rescale (same ordering as the Picard loop).
 function veq_source_samples(shot::Shot, ψ_s::Real, sample_count::Int)
-    shot.dP_dψ !== nothing || error("veq_solve! requires dP_dψ (P and current-based inputs not yet supported)")
-    shot.F_dF_dψ !== nothing || error("veq_solve! requires F_dF_dψ (Jt/Jt_R inputs not yet supported)")
+    Pp = Pprime(shot, shot.P, shot.dP_dψ)
+    ffp = FFprime(shot, shot.F_dF_dψ, shot.Jt_R, shot.Jt; invR=shot.invR, invR2=shot.invR2)
     ψn_axis = range(0.0, 1.0, sample_count)
     heat = Vector{Float64}(undef, sample_count)
     curr = Vector{Float64}(undef, sample_count)
     for (i, ψn) in enumerate(ψn_axis)
         ρpol = sqrt(ψn)
-        ρp = shot.dP_dψ.grid === :poloidal ? ρpol : shot.ρtor(ρpol)
-        ρf = shot.F_dF_dψ.grid === :poloidal ? ρpol : shot.ρtor(ρpol)
-        heat[i] = shot.dP_dψ.fe(ρp) * ψ_s
-        curr[i] = shot.F_dF_dψ.fe(ρf) * ψ_s
+        heat[i] = Pp(ρpol) * ψ_s
+        curr[i] = ffp(ρpol) * ψ_s
     end
     return heat, curr
+end
+
+# P, Jt, and Jt_R inputs (and any :toroidal-grid profile) are converted to
+# dP_dψ/F_dF_dψ through the Shot's current Ψ and flux-surface averages, so the
+# outer loop must write the equilibrium back into the Shot between iterations.
+# Same for an Ip constraint, which rescales against Ip(shot).
+# Pure :poloidal dP_dψ/F_dF_dψ inputs scale linearly with ψ_s and need neither.
+function veq_needs_geometry(shot::Shot)
+    (shot.P !== nothing || shot.Jt !== nothing || shot.Jt_R !== nothing) && return true
+    shot.Ip_target !== nothing && return true
+    shot.dP_dψ !== nothing && shot.dP_dψ.grid === :toroidal && return true
+    shot.F_dF_dψ !== nothing && shot.F_dF_dψ.grid === :toroidal && return true
+    return false
+end
+
+"""Set Ψ to the exact flux-function form Ψaxis·(1−ρ²) and refresh FSAs (for uninitialized Shots)."""
+function veq_init_flux!(shot::Shot, Ψaxis::Real)
+    shot.C .= 0.0
+    shot.C[2:2:end, 1] .= Ψaxis .* (1.0 .- shot.ρ .^ 2)
+    shot.C[1:2:end, 1] .= -2.0 .* Ψaxis .* shot.ρ
+    set_FSAs!(shot)
+    return shot
+end
+
+# Initial flux-scale guess for an uninitialized Shot. TEQUILA's convention has
+# sign(ψ_s) = sign(-Ψaxis) = sign(Ip), with magnitude ~ μ0·Ip·R0 (checked vs
+# Picard). Only the sign matters for convergence of the outer loop.
+function veq_guess_flux_scale(shot::Shot)
+    I = shot.Ip_target !== nothing ? shot.Ip_target : Ip(shot)
+    I == 0.0 && return -1.0
+    R0 = shot.surfaces[1, end]
+    return μ₀ * I * R0
 end
 
 """Evaluate the flattened MXH surface (Shot layout) at normalized flux ψn."""
@@ -105,66 +138,8 @@ function veq_flat_surface!(flat::AbstractVector, x::AbstractVector, kern::VEQKer
     return flat
 end
 
-"""
-    veq_solve!(shot::Shot;
-        h_count=3, kappa_count=6, psin_count=6, c_counts=zeros(Int, length(shot.cfe)),
-        s_counts=[3; zeros(Int, length(shot.sfe) - 1)],
-        Nr=16, Nt=16, sample_count=51,
-        outer_its=10, outer_tol=1e-8, tol=1e-9, debug=false)
-
-Run the VEQ direct solve for `shot`'s boundary and dP_dψ/F_dF_dψ profiles and
-write the result back into `shot`. The flux scale ψ_s = −Ψaxis is converged by
-an outer fixed point (α2 = ψ_s²), warm-starting each inner Newton solve.
-
-Counts arrays may include trailing zeros: those harmonics stay passive
-(boundary value scaled by ρ^K_m) but still shape the geometry.
-
-Returns `shot`.
-"""
-function veq_solve!(shot::Shot;
-    h_count::Int=3, v_count::Int=0, kappa_count::Int=6, c0_count::Int=0, psin_count::Int=6,
-    c_counts::AbstractVector{<:Integer}=zeros(Int, length(shot.cfe)),
-    s_counts::AbstractVector{<:Integer}=[3; zeros(Int, length(shot.sfe) - 1)],
-    Nr::Int=16, Nt::Int=16, sample_count::Int=51,
-    outer_its::Int=10, outer_tol::Real=1e-8, tol::Real=1e-9,
-    ψ_s0::Real=-1.0, debug::Bool=false)
-
-    top = VEQTopology(; h_count, v_count, kappa_count, c0_count, psin_count,
-        c_counts, s_counts, Nr, Nt, sample_count)
-    boundary = VEQBoundary(shot)
-
-    # flux scale ψ_s = dΨ/dψn = −Ψaxis (Ψbnd = 0). For an uninitialized Shot
-    # (Ψ ≡ 0), fall back to ψ_s0, whose sign selects the flux orientation.
-    _, _, Ψaxis = find_axis(shot)
-    ψ_s = Ψaxis == 0.0 ? float(ψ_s0) : -Ψaxis
-
-    heat, curr = veq_source_samples(shot, ψ_s, sample_count)
-    kern = VEQKernel(top, boundary, VEQSource(; heat_profile=heat, current_profile=curr))
-
-    # Flux-convention note: TEQUILA's Ψ is the total poloidal flux (Wb) with
-    # Ψbnd = 0, while VEQ's GS residual is written for per-radian flux
-    # ψ = Ψ/2π, so α2 = (dψ/dψn)² = (ψ_s/2π)². The self-consistency condition
-    # is therefore α2(ψ_s) = (ψ_s/2π)². Both source inputs scale linearly with
-    # ψ_s, which leaves the solved shape x invariant and makes α2 exactly
-    # linear in ψ_s — so the fixed point ψ_s* = 4π²·α2(ψ_s)/ψ_s is exact after
-    # a single inner solve (up to spline re-materialization effects), and the
-    # loop below typically finishes in 2-3 iterations.
-    x = zeros(kern.x_size)
-    local ok, rn, it
-    for outer in 1:outer_its
-        x, ok, rn, it = veq_solve(kern; x0=x, tol)
-        ok || @warn "veq_solve!: inner Newton did not reach tol" outer rn it
-        _, α1, α2 = veq_residual!(similar(x), x, kern)
-        ψ_s_new = 4π^2 * α2 / ψ_s
-        debug && println("outer $outer: ψ_s = $ψ_s → $ψ_s_new, inner its = $it, |r| = $rn")
-        dψ = abs(ψ_s_new - ψ_s) / abs(ψ_s_new)
-        ψ_s = ψ_s_new
-        heat, curr = veq_source_samples(shot, ψ_s, sample_count)
-        kern = veq_with_source(kern, VEQSource(; heat_profile=heat, current_profile=curr))
-        dψ < outer_tol && break
-    end
-
-    # --- write back: surfaces at the Shot's flux knots + exact flux-function Ψ
+"""Write the VEQ state back into `shot`: MXH surfaces at the knot flux levels + exact flux-function Ψ."""
+function veq_writeback!(shot::Shot, x::AbstractVector, kern::VEQKernel, ψ_s::Real)
     L = length(shot.cfe)
     surfaces = similar(shot.surfaces)
     for kknot in eachindex(shot.ρ)
@@ -177,6 +152,96 @@ function veq_solve!(shot::Shot;
     veq_flat_surface!(flat_δ3, x, kern, (shot.ρ[end - 1] + δ_frac_3 * δρ)^2, L)
 
     update_shot!(shot, surfaces, -ψ_s, flat_δ2, flat_δ3)
+    return shot
+end
+
+"""
+    veq_solve!(shot::Shot;
+        h_count=3, kappa_count=6, psin_count=6, c_counts=zeros(Int, length(shot.cfe)),
+        s_counts=[3; zeros(Int, length(shot.sfe) - 1)],
+        Nr=16, Nt=16, sample_count=51,
+        outer_its=20, outer_tol=1e-8, tol=1e-9, debug=false)
+
+Run the VEQ direct solve for `shot`'s boundary and pressure/current profiles
+and write the result back into `shot`. All Shot profile routes are supported
+(dP_dψ or P; F_dF_dψ, Jt, or Jt_R), on :poloidal or :toroidal grids, with
+optional `shot.Ip_target` enforced by TEQUILA-style current rescaling.
+
+The flux scale ψ_s = −Ψaxis is converged by an outer fixed point (α2 = ψ_s²),
+warm-starting each inner Newton solve. When the profile conversion depends on
+the equilibrium (P/Jt/Jt_R, :toroidal grids, or Ip constraint), the solution
+is written back into `shot` every outer iteration so conversions and Ip see
+the current geometry.
+
+Counts arrays may include trailing zeros: those harmonics stay passive
+(boundary value scaled by ρ^K_m) but still shape the geometry.
+
+Returns `shot`.
+"""
+function veq_solve!(shot::Shot;
+    h_count::Int=3, v_count::Int=0, kappa_count::Int=6, c0_count::Int=0, psin_count::Int=6,
+    c_counts::AbstractVector{<:Integer}=zeros(Int, length(shot.cfe)),
+    s_counts::AbstractVector{<:Integer}=[3; zeros(Int, length(shot.sfe) - 1)],
+    Nr::Int=16, Nt::Int=16, sample_count::Int=51,
+    outer_its::Int=20, outer_tol::Real=1e-8, tol::Real=1e-9,
+    ψ_s0::Real=0.0, debug::Bool=false)
+
+    top = VEQTopology(; h_count, v_count, kappa_count, c0_count, psin_count,
+        c_counts, s_counts, Nr, Nt, sample_count)
+    boundary = VEQBoundary(shot)
+    needs_geometry = veq_needs_geometry(shot)
+
+    # flux scale ψ_s = dΨ/dψn = −Ψaxis (Ψbnd = 0). For an uninitialized Shot
+    # (Ψ ≡ 0), start from ψ_s0 (0 = guess from Ip), whose sign selects the
+    # flux orientation, and set Ψ to the flux-function form so that
+    # equilibrium-dependent profile conversions are defined.
+    _, _, Ψaxis = find_axis(shot)
+    if Ψaxis == 0.0
+        ψ_s = ψ_s0 == 0.0 ? veq_guess_flux_scale(shot) : float(ψ_s0)
+        needs_geometry && veq_init_flux!(shot, -ψ_s)
+    else
+        ψ_s = -Ψaxis
+    end
+
+    update_profiles!(shot)
+    shot.Ip_target !== nothing && scale_Ip!(shot)
+    heat, curr = veq_source_samples(shot, ψ_s, sample_count)
+    kern = VEQKernel(top, boundary, VEQSource(; heat_profile=heat, current_profile=curr))
+
+    # Flux-convention note: TEQUILA's Ψ is the total poloidal flux (Wb) with
+    # Ψbnd = 0, while VEQ's GS residual is written for per-radian flux
+    # ψ = Ψ/2π, so α2 = (dψ/dψn)² = (ψ_s/2π)². The self-consistency condition
+    # is therefore α2(ψ_s) = (ψ_s/2π)². For dP_dψ/F_dF_dψ inputs both sources
+    # scale linearly with ψ_s, which leaves the solved shape x invariant and
+    # makes α2 exactly linear in ψ_s — so the fixed point ψ_s* = 4π²·α2/ψ_s is
+    # exact after a single inner solve and the loop finishes in 2-3 iterations.
+    # Equilibrium-dependent routes add geometry feedback through the
+    # per-iteration writeback and converge like a (fast) Picard iteration.
+    x = zeros(kern.x_size)
+    local ok, rn, it
+    for outer in 1:outer_its
+        x, ok, rn, it = veq_solve(kern; x0=x, tol)
+        ok || @warn "veq_solve!: inner Newton did not reach tol" outer rn it
+        _, α1, α2 = veq_residual!(similar(x), x, kern)
+        ψ_s_new = 4π^2 * α2 / ψ_s
+        debug && println("outer $outer: ψ_s = $ψ_s → $ψ_s_new, inner its = $it, |r| = $rn")
+        # ψ_s stationarity is the convergence measure (like Picard's Ψaxis
+        # criterion): geometry, profile conversions, and the Ip rescale factor
+        # all feed back into ψ_s, so they are stationary when ψ_s is.
+        err = abs(ψ_s_new - ψ_s) / abs(ψ_s_new)
+        ψ_s = ψ_s_new
+        if needs_geometry
+            # profile conversions and Ip must see this iteration's equilibrium
+            veq_writeback!(shot, x, kern, ψ_s)
+            update_profiles!(shot)
+            shot.Ip_target !== nothing && scale_Ip!(shot)
+        end
+        err < outer_tol && break
+        heat, curr = veq_source_samples(shot, ψ_s, sample_count)
+        kern = veq_with_source(kern, VEQSource(; heat_profile=heat, current_profile=curr))
+    end
+
+    needs_geometry || veq_writeback!(shot, x, kern, ψ_s)
     return shot
 end
 

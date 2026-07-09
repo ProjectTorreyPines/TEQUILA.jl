@@ -63,3 +63,36 @@ end
         @test isapprox(shot_v.surfaces[4, k], picard.surfaces[4, k]; rtol=2e-2)  # κ
     end
 end
+
+@testset "veq_solve! P/Jt/Ip route (FUSE inputs) vs Picard" begin
+    # FUSE's ActorTEQUILA passes pressure and toroidal current density on the
+    # rho_tor_norm grid with an Ip target; conversion to dP_dψ/FF' depends on
+    # the evolving equilibrium, exercising the per-iteration writeback path.
+    P_f(x) = 1.2e5 * (1 - x^2)^2 + 700.0
+    Jt_f(x) = 1.1e6 * (1 - x^2)
+    bnd = TEQUILA.MXH(1.7, -0.05, 0.35, 1.8, 0.07, [0.04, -0.05, 0.02, 0.01], [0.64, 0.08, -0.09, 0.03])
+    Pbnd, Fbnd, Ip_target = 700.0, 3.4, 1.3e6
+
+    shot_p = Shot(11, 11, bnd; P=(P_f, :toroidal), Jt=(Jt_f, :toroidal), Pbnd, Fbnd, Ip_target)
+    picard = TEQUILA.solve(shot_p, 100; tol=1e-10)
+    _, _, Ψax_p = find_axis(picard)
+
+    shot_v = Shot(11, 11, bnd; P=(P_f, :toroidal), Jt=(Jt_f, :toroidal), Pbnd, Fbnd, Ip_target)
+    veq_solve!(shot_v; h_count=5, v_count=5, kappa_count=6, c0_count=5, psin_count=7,
+        c_counts=[4, 4, 3, 3], s_counts=[4, 4, 3, 3], Nr=16, Nt=32)
+    _, _, Ψax_v = find_axis(shot_v)
+
+    @test abs(Ψax_v - Ψax_p) / abs(Ψax_p) < 0.02
+    @test isapprox(TEQUILA.Ip(shot_v), Ip_target; rtol=1e-6)
+    for k in (4, 7, 10)
+        @test isapprox(shot_v.surfaces[3, k], picard.surfaces[3, k]; rtol=2e-2)  # ϵ
+        @test isapprox(shot_v.surfaces[4, k], picard.surfaces[4, k]; rtol=2e-2)  # κ
+    end
+
+    # warm restart from its own solution converges immediately and stays put
+    Ψax_prev = Ψax_v
+    veq_solve!(shot_v; h_count=5, v_count=5, kappa_count=6, c0_count=5, psin_count=7,
+        c_counts=[4, 4, 3, 3], s_counts=[4, 4, 3, 3], Nr=16, Nt=32)
+    _, _, Ψax_w = find_axis(shot_v)
+    @test isapprox(Ψax_w, Ψax_prev; rtol=1e-4)
+end

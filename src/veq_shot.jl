@@ -11,6 +11,10 @@ Physical-units mapping (see docs/veq_formulation.md): with Ψbnd = 0 and
     curr(ψn) = d(F²/2)/dψn = ψ_s · F dF/dψ
 and returns α2 = ψ_s² self-consistently, so ψ_s is converged by a small
 outer fixed-point loop (each inner solve warm-started).
+
+Ported from veqpy (https://github.com/zhangtakeda/veqpy),
+Copyright (c) 2026 rhzhang, licensed under BSD 3-Clause.
+See THIRD_PARTY_LICENSES for the full license text.
 =#
 
 """Evaluate one VEQ profile block at arbitrary ρ (scalar version of `veq_profile`)."""

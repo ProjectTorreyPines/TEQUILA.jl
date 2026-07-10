@@ -7,6 +7,10 @@ Formulation notes and veqpy source references: docs/veq_formulation.md.
 
 Supported so far: route :PF with coordinate :psin, nodes :uniform
 (psin active family), with optional Ip constraint.
+
+Ported from veqpy (https://github.com/zhangtakeda/veqpy),
+Copyright (c) 2026 rhzhang, licensed under BSD 3-Clause.
+See THIRD_PARTY_LICENSES for the full license text.
 =#
 
 const VEQ_FIX_RHO = 0.05

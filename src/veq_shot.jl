@@ -44,6 +44,46 @@ function veq_rho_of_psin(x::AbstractVector, kern::VEQKernel, ψn::Real)
     return Roots.find_zero(f, (0.0, 1.0), Roots.Brent())
 end
 
+"""
+Monotone ψn(ρ) inversion table for the writeback.
+
+The kernel's residual uses an axis-regularized, floored ψn' (see
+`veq_regularize_psin_r!`), so the raw ψn Chebyshev profile of an (even
+converged) state may be locally non-monotone at the truncation-error level.
+Inverting the raw profile then maps nearby knot flux levels to out-of-order
+radii and produces crossing surfaces. Mirror the kernel instead: sample the
+raw profile, floor its increments, and renormalize to span [0, 1].
+Returns `(ρs, ψtab)` with `ψtab` strictly increasing.
+"""
+function veq_rho_psin_table(x::AbstractVector, kern::VEQKernel; n::Int=4001)
+    b = kern.blocks[findfirst(bb -> bb.name === :psin, kern.blocks)]
+    ρs = range(0.0, 1.0, n)
+    ψtab = Vector{Float64}(undef, n)
+    for (i, ρ) in enumerate(ρs)
+        ψtab[i] = veq_profile_at(b, x, kern, ρ)
+    end
+    floor_dψ = VEQ_PSIN_R_FLOOR * step(ρs)
+    for i in 2:n
+        ψtab[i] < ψtab[i-1] + floor_dψ && (ψtab[i] = ψtab[i-1] + floor_dψ)
+    end
+    ψ0 = ψtab[1]
+    invs = 1.0 / (ψtab[end] - ψ0)
+    @. ψtab = (ψtab - ψ0) * invs
+    ψtab[1] = 0.0
+    ψtab[end] = 1.0
+    return ρs, ψtab
+end
+
+"""Invert the monotone table from `veq_rho_psin_table` at `ψn` (linear interpolation)."""
+function veq_rho_of_psin(ρs::AbstractRange, ψtab::Vector{Float64}, ψn::Real)
+    ψn <= 0.0 && return 0.0
+    ψn >= 1.0 && return 1.0
+    j = searchsortedfirst(ψtab, ψn)
+    j <= 1 && return 0.0
+    t = (ψn - ψtab[j-1]) / (ψtab[j] - ψtab[j-1])
+    return ρs[j-1] + t * step(ρs)
+end
+
 """Extract the VEQ boundary from a Shot's boundary surface and Fbnd."""
 function VEQBoundary(shot::Shot)
     bnd = @view shot.surfaces[:, end]
@@ -113,10 +153,10 @@ function veq_guess_flux_scale(shot::Shot)
     return μ₀ * I * R0
 end
 
-"""Evaluate the flattened MXH surface (Shot layout) at normalized flux ψn."""
-function veq_flat_surface!(flat::AbstractVector, x::AbstractVector, kern::VEQKernel, ψn::Real, L::Int)
+"""Evaluate the flattened MXH surface (Shot layout) at normalized flux ψn (`ρv` from raw-profile inversion by default)."""
+function veq_flat_surface!(flat::AbstractVector, x::AbstractVector, kern::VEQKernel, ψn::Real, L::Int;
+    ρv::Real=veq_rho_of_psin(x, kern, ψn))
     bd = kern.boundary
-    ρv = veq_rho_of_psin(x, kern, ψn)
     byname = Dict(b.name => b for b in kern.blocks)
     h = veq_profile_at(byname[:h], x, kern, ρv)
     v = veq_profile_at(byname[:v], x, kern, ρv)
@@ -138,21 +178,49 @@ function veq_flat_surface!(flat::AbstractVector, x::AbstractVector, kern::VEQKer
     return flat
 end
 
-"""Write the VEQ state back into `shot`: MXH surfaces at the knot flux levels + exact flux-function Ψ."""
+"""Check that MXH knot surfaces are strictly nested (minor radius increasing, Rmax increasing, Rmin decreasing)."""
+function veq_surfaces_nested(surfaces::AbstractMatrix{<:Real})
+    R0 = surfaces[1, 1]
+    a_prev = R0 * surfaces[3, 1]
+    Rmax_prev = R0 + a_prev
+    Rmin_prev = R0 - a_prev
+    for k in 2:size(surfaces, 2)
+        R0 = surfaces[1, k]
+        a = R0 * surfaces[3, k]
+        Rmax = R0 + a
+        Rmin = R0 - a
+        (a > a_prev && Rmax > Rmax_prev && Rmin < Rmin_prev) || return false
+        a_prev, Rmax_prev, Rmin_prev = a, Rmax, Rmin
+    end
+    return true
+end
+
+"""
+Write the VEQ state back into `shot`: MXH surfaces at the knot flux levels + exact flux-function Ψ.
+
+An unconverged state can produce non-nested (crossing) surfaces whose flux-surface averages
+are invalid; in that case the shot is left untouched and `false` is returned so the outer
+loop can proceed on the previous geometry.
+"""
 function veq_writeback!(shot::Shot, x::AbstractVector, kern::VEQKernel, ψ_s::Real)
     L = length(shot.cfe)
+    ρtab, ψtab = veq_rho_psin_table(x, kern)
     surfaces = similar(shot.surfaces)
     for kknot in eachindex(shot.ρ)
-        @views veq_flat_surface!(surfaces[:, kknot], x, kern, shot.ρ[kknot]^2, L)
+        ρv = veq_rho_of_psin(ρtab, ψtab, shot.ρ[kknot]^2)
+        @views veq_flat_surface!(surfaces[:, kknot], x, kern, shot.ρ[kknot]^2, L; ρv)
     end
+    veq_surfaces_nested(surfaces) || return false
     δρ = shot.ρ[end] - shot.ρ[end - 1]
     flat_δ2 = zeros(2L + 5)
-    veq_flat_surface!(flat_δ2, x, kern, (shot.ρ[end - 1] + δ_frac_2 * δρ)^2, L)
+    ψn_δ2 = (shot.ρ[end - 1] + δ_frac_2 * δρ)^2
+    veq_flat_surface!(flat_δ2, x, kern, ψn_δ2, L; ρv=veq_rho_of_psin(ρtab, ψtab, ψn_δ2))
     flat_δ3 = zeros(2L + 5)
-    veq_flat_surface!(flat_δ3, x, kern, (shot.ρ[end - 1] + δ_frac_3 * δρ)^2, L)
+    ψn_δ3 = (shot.ρ[end - 1] + δ_frac_3 * δρ)^2
+    veq_flat_surface!(flat_δ3, x, kern, ψn_δ3, L; ρv=veq_rho_of_psin(ρtab, ψtab, ψn_δ3))
 
     update_shot!(shot, surfaces, -ψ_s, flat_δ2, flat_δ3)
-    return shot
+    return true
 end
 
 """
@@ -219,6 +287,7 @@ function veq_solve!(shot::Shot;
     # per-iteration writeback and converge like a (fast) Picard iteration.
     x = zeros(kern.x_size)
     local ok, rn, it
+    wb_ok = true
     for outer in 1:outer_its
         x, ok, rn, it = veq_solve(kern; x0=x, tol)
         ok || @warn "veq_solve!: inner Newton did not reach tol" outer rn it
@@ -231,17 +300,30 @@ function veq_solve!(shot::Shot;
         err = abs(ψ_s_new - ψ_s) / abs(ψ_s_new)
         ψ_s = ψ_s_new
         if needs_geometry
-            # profile conversions and Ip must see this iteration's equilibrium
-            veq_writeback!(shot, x, kern, ψ_s)
-            update_profiles!(shot)
-            shot.Ip_target !== nothing && scale_Ip!(shot)
+            # profile conversions and Ip must see this iteration's equilibrium;
+            # an unconverged state can be non-nested — then keep the previous
+            # geometry for this iteration's conversions and let ψ_s/x evolve
+            wb_ok = veq_writeback!(shot, x, kern, ψ_s)
+            if wb_ok
+                update_profiles!(shot)
+                shot.Ip_target !== nothing && scale_Ip!(shot)
+            else
+                debug && println("outer $outer: non-nested surfaces, writeback skipped")
+            end
         end
-        err < outer_tol && break
+        (err < outer_tol && wb_ok) && break
         heat, curr = veq_source_samples(shot, ψ_s, sample_count)
         kern = veq_with_source(kern, VEQSource(; heat_profile=heat, current_profile=curr))
     end
 
-    needs_geometry || veq_writeback!(shot, x, kern, ψ_s)
+    if needs_geometry
+        wb_ok || error("veq_solve!: solve ended with non-nested surfaces (inner |r| = $rn); " *
+                       "try increasing the VEQ profile counts (psin_count, kappa_count, ...) for this profile shape")
+    else
+        veq_writeback!(shot, x, kern, ψ_s) ||
+            error("veq_solve!: solve produced non-nested surfaces (inner |r| = $rn); " *
+                  "try increasing the VEQ profile counts (psin_count, kappa_count, ...) for this profile shape")
+    end
     return shot
 end
 

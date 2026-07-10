@@ -294,7 +294,6 @@ function veq_solve!(shot::Shot;
     wb_ok = true
     for outer in 1:outer_its
         x, ok, rn, it = veq_solve(kern; x0=x, tol)
-        ok || @warn "veq_solve!: inner Newton did not reach tol" outer rn it
         _, α1, α2 = veq_residual!(similar(x), x, kern)
         ψ_s_new = 4π^2 * α2 / ψ_s
         debug && println("outer $outer: ψ_s = $ψ_s → $ψ_s_new, inner its = $it, |r| = $rn")
@@ -319,6 +318,8 @@ function veq_solve!(shot::Shot;
         heat, curr = veq_source_samples(shot, ψ_s, sample_count)
         kern = veq_with_source(kern, VEQSource(; heat_profile=heat, current_profile=curr))
     end
+
+    ok || @warn "veq_solve!: inner Newton did not reach tol" rn it
 
     if needs_geometry
         wb_ok || error("veq_solve!: solve ended with non-nested surfaces (inner |r| = $rn); " *

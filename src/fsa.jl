@@ -300,6 +300,7 @@ function toroidal_flux!(Φ::AbstractVector{<:Real}, shot::F1, ρs::AbstractVecto
     @assert length(Φ) === length(ρs)
     Vp, _, invR2, F = get_FEs(shot, use_cached)
     f = x -> F(x) * Vp(x) * invR2(x)
+    Φ[1] = zero(eltype(Φ))
     for k in eachindex(ρs)[2:end]
         Φ[k] = Φ[k-1] + quadgk(f, ρs[k-1], ρs[k])[1] / twopi
     end
@@ -351,6 +352,15 @@ function ρtor_coeffs!(Y::FE_rep, shot::F1; use_cached=true, ε::Real=1e-6) wher
     toroidal_flux!(Φ, shot, shot.ρ; use_cached)
     Φ0 = Φ[end]
 
+    # transient states (e.g. an unconverged VEQ outer iteration or a poor
+    # Picard iterate) can have locally sign-reversed dΦ increments; clamp Φ to
+    # be monotone toward Φ0 so ρtor stays real and monotone (Φ may be of either
+    # sign depending on Fbnd; no-op at valid states)
+    s = sign(Φ0)
+    for k in eachindex(Φ)[2:end]
+        s * Φ[k] < s * Φ[k-1] && (Φ[k] = Φ[k-1])
+    end
+
     # then compute ρtor
     @. Y.coeffs[2:2:end] = sqrt(Φ / Φ0)
     Y.coeffs[1] = 0.0
@@ -366,7 +376,12 @@ function ρtor_coeffs!(Y::FE_rep, shot::F1; use_cached=true, ε::Real=1e-6) wher
     # fix on-axis derivative by taking approximate derivative at δ
     # using ρtor(δ) ≈ dρtor_dρ(δ) * δ  in equation above
     δ = ε * Y.x[2]
-    Y.coeffs[1] = sqrt(f(δ) / (2.0 * Φ0 * δ))
+    Y.coeffs[1] = sqrt(max(f(δ) / (2.0 * Φ0 * δ), 0.0))
+
+    # clamped flat spots above give ρtor = 0 or non-finite slopes; zero them
+    for i in eachindex(Y.coeffs)[3:2:end]
+        isfinite(Y.coeffs[i]) || (Y.coeffs[i] = 0.0)
+    end
 
     return Y
 end

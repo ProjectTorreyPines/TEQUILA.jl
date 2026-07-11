@@ -41,3 +41,5 @@ const psi_fe = TEQUILA.FE(x, (x .^ 2) .- 2.0)
     _, _, Ψaxis = find_axis(refill)
     @test isapprox(Ψaxis, Ψgood; rtol=1e-4)
 end
+
+include("test_veq.jl")

@@ -4,6 +4,8 @@ TEQUILA is a fixed-boundary equilibrium solver that uses cubic-Hermite finite el
 
 The high-level implementation borrows extensively: Jardin, Stephen. Computational Methods in Plasma Physics. CRC Press, 2010.
 
+The VEQ direct solver (`src/veq.jl` and `src/veq_shot.jl`) is a Julia port of [veqpy](https://github.com/zhangtakeda/veqpy) by rhzhang.
+
 TEQUILA uses COCOS 11 convention.
 
 ## Online documentation

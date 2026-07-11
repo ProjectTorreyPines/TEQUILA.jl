@@ -21,6 +21,10 @@ function _solve_extremum(objfun, constraint, x0::Vector{Float64}, lb::Vector{Flo
     opt.lower_bounds = lb
     opt.upper_bounds = ub
     opt.maxtime = 10.0
+    # stopping/constraint tolerances matching the NLopt MOI wrapper defaults
+    # (a bare Opt has none set and would only stop on maxtime)
+    opt.ftol_rel = 1e-7
+    opt.xtol_rel = 1e-7
     wrapped = (x, g) -> begin
         if length(g) > 0
             ForwardDiff.gradient!(g, objfun, x)
@@ -32,7 +36,7 @@ function _solve_extremum(objfun, constraint, x0::Vector{Float64}, lb::Vector{Flo
     else
         opt.min_objective = wrapped
     end
-    NLopt.equality_constraint!(opt, constraint, 1e-8)
+    NLopt.equality_constraint!(opt, constraint, 1e-7)
     (_, optx, ret) = NLopt.optimize(opt, clamp.(x0, lb, ub))
     @assert ret in nlopt_success "MXH fit extremum optimization failed (status :$ret)"
     return optx

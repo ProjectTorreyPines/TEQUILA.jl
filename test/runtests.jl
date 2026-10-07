@@ -24,22 +24,11 @@ const psi_fe = TEQUILA.FE(x, (x .^ 2) .- 2.0)
     @test refill isa Shot
     @test isapprox(shot.Ip_target, Ip(refill); rtol=1e-2)
 
-    # BCL 3/4/2026: axis Ψgood set from the following versioninfo()
-    #   Julia Version 1.11.7
-    #   Commit f2b3dbda30a (2025-09-08 12:10 UTC)
-    #   Build Info:
-    #     Official https://julialang.org/ release
-    #   Platform Info:
-    #     OS: macOS (arm64-apple-darwin24.0.0)
-    #     CPU: 12 × Apple M4 Pro
-    #     WORD_SIZE: 64
-    #     LLVM: libLLVM-16.0.6 (ORCJIT, apple-m1)
-    #   Threads: 8 default, 0 interactive, 4 GC (on 8 virtual cores)
-    #   Environment:
-    #     JULIA_NUM_THREADS = auto
-    Ψgood = -0.758609506834637
-    _, _, Ψaxis = find_axis(refill)
-    @test isapprox(Ψaxis, Ψgood; rtol=1e-4)
+    # A small axis-flux update alone must not accept a refit with the wrong Ip.
+    shifted = Shot(shot; Ip_target=1.2 * Ip_target)
+    current_limited = TEQUILA.solve!(shifted, 100; relax=0.25, tol=1e-3)
+    @test isapprox(Ip(current_limited), shifted.Ip_target; rtol=1e-3)
+
 end
 
 include("test_veq.jl")

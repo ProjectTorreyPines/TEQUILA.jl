@@ -121,7 +121,8 @@ function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0, debu
         error = abs((Ψaxis - Ψold) / Ψaxis)
         debug && println("    Status: Ψaxis = $Ψaxis, Error: $error")
         Ψold = Ψaxis
-        if error <= tol && i > 1 && !warn_concentric
+        if error <= tol && i > 1 && !warn_concentric &&
+           (refill.Ip_target === nothing || abs(Ip(refill) / refill.Ip_target - 1.0) <= tol)
             debug && println("DONE: Successful convergence")
             break
         end

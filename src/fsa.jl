@@ -185,7 +185,7 @@ function fsa_invR(shot::F1, ρ; tid=Threads.threadid()) where {F1<:Shot}
     return FSA(f, shot, ρ)
 end
 
-function FiniteElementHermite.FE_rep(shot::F1, f::F2, coeffs=Vector{typeof(shot.ρ[1])}(undef, 2 * length(shot.ρ)); ε=1e-6) where {F1<:Shot,F2}
+function FiniteElementHermite.FE_rep(shot::F1, f::F2, coeffs=Vector{promote_type(eltype(shot.ρ), eltype(shot.surfaces))}(undef, 2 * length(shot.ρ)); ε=1e-6) where {F1<:Shot,F2}
     for (i, x) in enumerate(shot.ρ)
         # BCL 4/26/23: I'd like to use ForwardDiff here, but the use of intermediate arrays
         #              in evaluate_csx!() prevents that
@@ -335,7 +335,7 @@ function get_FEs(shot::Shot, use_cached::Bool)
         F = shot.F
     else
         N = length(shot.ρ)
-        F = FE_rep(shot.ρ, zeros(eltype(shot.ρ, 2N)))
+        F = FE_rep(shot.ρ, zeros(promote_type(eltype(shot.ρ), eltype(shot.surfaces)), 2N))
         Fpol_coeffs!(F, shot; invR, invR2)
     end
 
@@ -362,7 +362,7 @@ function ρtor_coeffs!(Y::FE_rep, shot::F1; use_cached=true, ε::Real=1e-6) wher
     end
 
     # then compute ρtor
-    @. Y.coeffs[2:2:end] = sqrt(Φ / Φ0)
+    @. Y.coeffs[2:2:end] = sqrt0(Φ / Φ0)
     Y.coeffs[1] = 0.0
     Y.coeffs[end] = 1.0
     @views ρtor = Y.coeffs[2:2:end]

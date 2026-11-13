@@ -32,3 +32,4 @@ const psi_fe = TEQUILA.FE(x, (x .^ 2) .- 2.0)
 end
 
 include("test_veq.jl")
+include("test_dual.jl")

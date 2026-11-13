@@ -63,7 +63,7 @@ function surfaces_FE(ρ::AbstractVector{<:Real}, surfaces::AbstractVector{<:MXH}
         ss[i, :] = surface.s
     end
 
-    rtype = typeof(ρ[1])
+    rtype = promote_type(typeof(ρ[1]), eltype(R0s))
 
     R0fe = FE(ρ, rtype.(R0s))
     Z0fe = FE(ρ, rtype.(Z0s))
@@ -82,7 +82,8 @@ function surfaces_FE(ρ::AbstractVector{<:Real}, surfaces::AbstractVector{<:MXH}
 end
 
 function surfaces_FE(ρ::AbstractVector{<:Real}, surfaces::AbstractMatrix{<:Real}, flat_δ2::Nothing=nothing, flat_δ3::Nothing=nothing)
-    rtype = typeof(ρ[1])
+    # keep the surfaces' number type (e.g. ForwardDiff duals); ρ is a plain grid
+    rtype = promote_type(typeof(ρ[1]), eltype(surfaces))
 
     @views R0fe = FE(ρ, rtype.(surfaces[1, :]))
     @views Z0fe = FE(ρ, rtype.(surfaces[2, :]))
@@ -173,21 +174,6 @@ function Δ(shot, ρ, R, Z; tid=Threads.threadid(), extrapolation_order::Int=1)
     return Δ
 end
 
-function ρθ_RZ(shot, R::ForwardDiff.Dual, Z; kwargs...)
-    throw(ArgumentError(
-        "ρθ_RZ received ForwardDiff.Dual input. " *
-        "This is not differentiable (calls Roots.find_zero internally). " *
-        "Use MXHEquilibrium.psi_gradient(shot, R, Z) for ψ derivatives."
-    ))
-end
-function ρθ_RZ(shot, R, Z::ForwardDiff.Dual; kwargs...)
-    throw(ArgumentError(
-        "ρθ_RZ received ForwardDiff.Dual input. " *
-        "This is not differentiable (calls Roots.find_zero internally). " *
-        "Use MXHEquilibrium.psi_gradient(shot, R, Z) for ψ derivatives."
-    ))
-end
-
 """
     ρθ_RZ(shot, R, Z; extrapolate::Bool=false, extrapolation_order::Int=1)
 
@@ -195,41 +181,71 @@ Find the MXH `(ρ, θ)` value corresponding the `(R, Z)` for a given `shot`
 
 `extrapolate=true` uses the final radial finite-element value to extrapolate outside boundary,
 else ρ set to 1.0. `extrapolation_order` controls the Taylor order (1=linear, 2=quadratic).
-"""
 
+With a dual-typed `shot` (or dual `R`, `Z`), ρ is root-found on values and its
+partials follow from the implicit function theorem on `Δ(shot, ρ, R, Z) = 0`.
+"""
 function ρθ_RZ(shot, R, Z; extrapolate::Bool=false, ρmax::Real=100.0, extrapolation_order::Int=1)
-    f = x -> Δ(shot, x, R, Z; extrapolation_order)
-    if f(1.0) >= 0.0
-        ρ = Roots.find_zero(f, (0, 1), Roots.A42())
-    else
-        if !extrapolate
-            ρ = 1.0
-        else
-            ρl = 1.0
-            δ = 0.1
-            ρu = ρl + δ
-            while f(ρu) < 0.0
-                ρl = ρu
-                δ *= 2.0
-                ρu += δ
-                if ρu > ρmax
-                    error("Could not find ρ value for R=$R, Z=$Z within ρmax=$ρmax")
-                end
-            end
-            ρ = Roots.find_zero(f, (ρl, ρu), Roots.A42())
-        end
+    if _numtype(shot) <: ForwardDiff.Dual || R isa ForwardDiff.Dual || Z isa ForwardDiff.Dual
+        return _ρθ_RZ_dual(shot, R, Z; extrapolate, ρmax, extrapolation_order)
     end
+    f = x -> Δ(shot, x, R, Z; extrapolation_order)
+    ρ = _ρ_RZ_root(f, R, Z; extrapolate, ρmax)
     θ, _ = (ρ == 0.0) ? (0.0, 0.0) : θ_at_RZ(shot, ρ, R, Z; extrapolation_order)
     return ρ, θ
 end
+
+_numtype(shot::Shot) = eltype(shot.surfaces)
+_numtype(shot) = Float64
+
+# bracketed root of the surface-distance function `f(ρ)` (plain floats)
+function _ρ_RZ_root(f, R, Z; extrapolate::Bool, ρmax::Real)
+    if f(1.0) >= 0.0
+        return Roots.find_zero(f, (0, 1), Roots.A42())
+    elseif !extrapolate
+        return 1.0
+    end
+    ρl = 1.0
+    δ = 0.1
+    ρu = ρl + δ
+    while f(ρu) < 0.0
+        ρl = ρu
+        δ *= 2.0
+        ρu += δ
+        if ρu > ρmax
+            error("Could not find ρ value for R=$R, Z=$Z within ρmax=$ρmax")
+        end
+    end
+    return Roots.find_zero(f, (ρl, ρu), Roots.A42())
+end
+
+function _ρθ_RZ_dual(shot, R, Z; extrapolate::Bool, ρmax::Real, extrapolation_order::Int)
+    Rv, Zv = ForwardDiff.value(R), ForwardDiff.value(Z)
+    fv = x -> ForwardDiff.value(Δ(shot, x, Rv, Zv; extrapolation_order))
+    ρv = _ρ_RZ_root(fv, Rv, Zv; extrapolate, ρmax)
+    (ρv == 0.0) && return ρv, 0.0
+    # outside the boundary without extrapolation ρ is clamped to 1: no partials
+    (!extrapolate && ρv == 1.0 && fv(1.0) < 0.0) && return ρv, θ_at_RZ(shot, ρv, R, Z; extrapolation_order)[1]
+    # implicit function theorem on Δ(ρ; p, R, Z) = 0: one Newton step on the
+    # partials, value kept at the float root
+    Δd = Δ(shot, ρv, R, Z; extrapolation_order)
+    dΔ_dρ = ForwardDiff.value(ForwardDiff.derivative(x -> Δ(shot, x, Rv, Zv; extrapolation_order), ρv))
+    ρ = _with_value(ρv, -Δd / dΔ_dρ)
+    θ, _ = θ_at_RZ(shot, ρ, R, Z; extrapolation_order)
+    return ρ, θ
+end
+
+# Scratch buffers must hold the product of FE coefficients and basis values:
+# key the cache on that promoted type, not on the (always Float64) basis value.
+_cache_key(fes, nu) = isempty(fes) ? nu : zero(eltype(first(fes).coeffs)) * nu
 
 function evaluate_csx!(shot::Shot, k::Integer, nu_ou, nu_eu, nu_ol, nu_el; tid=Threads.threadid())
     return evaluate_csx!(shot._cx, shot._sx, shot.cfe, shot.sfe, k, nu_ou, nu_eu, nu_ol, nu_el; tid)
 end
 
 function evaluate_csx!(cxs, sxs, cfe, sfe, k::Integer, nu_ou, nu_eu, nu_ol, nu_el; tid=Threads.threadid())
-    cx = get_tmp(cxs[tid], nu_ou)
-    sx = get_tmp(sxs[tid], nu_ou)
+    cx = get_tmp(cxs[tid], _cache_key(cfe, nu_ou))
+    sx = get_tmp(sxs[tid], _cache_key(sfe, nu_ou))
     @inbounds for m in eachindex(cfe)
         cx[m] = evaluate_inbounds(cfe[m], k, nu_ou, nu_eu, nu_ol, nu_el)
         sx[m] = evaluate_inbounds(sfe[m], k, nu_ou, nu_eu, nu_ol, nu_el)
@@ -245,8 +261,8 @@ end
 
 function extrapolate_csx!(cxs, sxs, cfe, sfe, side::Symbol, k::Integer, Δx::Real,
                           DD_nu_ou, DD_nu_eu, DD_nu_ol, DD_nu_el; tid=Threads.threadid(), order::Int=2)
-    cx = get_tmp(cxs[tid], DD_nu_ou)
-    sx = get_tmp(sxs[tid], DD_nu_ou)
+    cx = get_tmp(cxs[tid], _cache_key(cfe, DD_nu_ou) * zero(Δx))
+    sx = get_tmp(sxs[tid], _cache_key(sfe, DD_nu_ou) * zero(Δx))
     @inbounds for m in eachindex(cfe)
         cx[m] = extrapolate(cfe[m], side, k, Δx, DD_nu_ou, DD_nu_eu, DD_nu_ol, DD_nu_el; order)
         sx[m] = extrapolate(sfe[m], side, k, Δx, DD_nu_ou, DD_nu_eu, DD_nu_ol, DD_nu_el; order)
@@ -266,8 +282,8 @@ function evaluate_dcsx!(shot::Shot, k::Integer, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_
 end
 
 function evaluate_dcsx!(dcxs, dsxs, cfe, sfe, k::Integer, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el; tid=Threads.threadid())
-    dcx = get_tmp(dcxs[tid], D_nu_ou)
-    dsx = get_tmp(dsxs[tid], D_nu_ou)
+    dcx = get_tmp(dcxs[tid], _cache_key(cfe, D_nu_ou))
+    dsx = get_tmp(dsxs[tid], _cache_key(sfe, D_nu_ou))
     @inbounds for m in eachindex(cfe)
         dcx[m] = evaluate_inbounds(cfe[m], k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)
         dsx[m] = evaluate_inbounds(sfe[m], k, D_nu_ou, D_nu_eu, D_nu_ol, D_nu_el)

@@ -326,11 +326,26 @@ function Shot(
     Fbnd::Real=10.0,
     Ip_target::Union{Nothing,Real}=nothing
 ) where {T<:Real}
-    Vp = FE_rep(ρ, Vector{T}(undef, 2N))
-    invR = FE_rep(ρ, Vector{T}(undef, 2N))
-    invR2 = FE_rep(ρ, Vector{T}(undef, 2N))
-    F = FE_rep(ρ, Vector{T}(undef, 2N))
-    ρtor = FE_rep(ρ, Vector{T}(undef, 2N))
+    # flux-surface averages carry the number type of the geometry and of the
+    # inputs entering Fpol/ρtor (e.g. ForwardDiff duals)
+    TS = promote_type(T, eltype(surfaces), typeof(Pbnd), typeof(Fbnd),
+        Ip_target === nothing ? T : typeof(Ip_target), _profile_numtype.((P, dP_dψ, F_dF_dψ, Jt_R, Jt))...)
+    if TS !== eltype(R0fe.coeffs)
+        # dual inputs on a plain geometry: promote the geometry so that all
+        # FE fields share one number type (no partials are added)
+        conv = y -> convert(TS, y)
+        surfaces = map(conv, surfaces)
+        C = map(conv, C)
+        R0fe, Z0fe, ϵfe, κfe, c0fe = (_retype_fe(fe, conv) for fe in (R0fe, Z0fe, ϵfe, κfe, c0fe))
+        cfe = [_retype_fe(fe, conv) for fe in cfe]
+        sfe = [_retype_fe(fe, conv) for fe in sfe]
+        Q = QuadInfo(ρ, M, length(cfe), R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe)
+    end
+    Vp = FE_rep(ρ, Vector{TS}(undef, 2N))
+    invR = FE_rep(ρ, Vector{TS}(undef, 2N))
+    invR2 = FE_rep(ρ, Vector{TS}(undef, 2N))
+    F = FE_rep(ρ, Vector{TS}(undef, 2N))
+    ρtor = FE_rep(ρ, Vector{TS}(undef, 2N))
     # we need an initial ρtor, use ρ
     ρtor.coeffs[1:2:end] .= 1.0
     ρtor.coeffs[2:2:end] .= ρ
@@ -586,7 +601,7 @@ Returns the normalized poloidal rho for `shot` and flux `psi`
 """
 function ρ(shot::Shot, psi)
     psin = 1.0 - psi / ψ₀(shot)
-    return sqrt(psin)
+    return sqrt0(psin) # exact zero on axis, also for dual partials
 end
 
 @recipe function plot_shot(shot::Shot, axes::Symbol=:rz; points=101, contours=true, surfaces=false, extrapolate=false)

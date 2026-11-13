@@ -56,6 +56,9 @@ end
 
 function solve!(refill::Shot, its::Integer; tol::Real=0.0, relax::Real=1.0, debug::Bool=false, fit_fallback::Bool=true, concentric_first::Bool=true, concentric_last::Symbol=:warn)
     @assert concentric_last in (:warn, :error) "concentric_last must be :warn or :error"
+    veq_input_numtype(refill) <: ForwardDiff.Dual &&
+        throw(ArgumentError("TEQUILA Picard solve does not propagate ForwardDiff duals (FFT, MXH refit by optimization); " *
+                            "use veq_solve! for derivatives"))
     if debug
         pstr = (refill.P !== nothing) ? "P on $(refill.P.grid) grid" : "dP_dψ on $(refill.dP_dψ.grid) grid"
         if refill.F_dF_dψ !== nothing

@@ -274,15 +274,23 @@ Boundary MXH parameters (edge values of the shape profiles) in veqpy's
 convention: R = R0 + a(h + ρ cos θb), Z = Z0 + a(v − ρ k sin θ),
 θb = θ + c0 + Σ c_m cos(mθ) + s_m sin(mθ). `c_offsets`/`s_offsets` m=1-started.
 """
-Base.@kwdef struct VEQBoundary
-    a::Float64
-    R0::Float64
-    Z0::Float64 = 0.0
-    B0::Float64
-    ka::Float64
-    c0::Float64 = 0.0
-    c_offsets::Vector{Float64} = Float64[]
-    s_offsets::Vector{Float64} = Float64[]
+struct VEQBoundary{T<:Real}
+    a::T
+    R0::T
+    Z0::T
+    B0::T
+    ka::T
+    c0::T
+    c_offsets::Vector{T}
+    s_offsets::Vector{T}
+end
+
+# number type follows the inputs (Float64, or ForwardDiff duals for sensitivities)
+function VEQBoundary(; a::Real, R0::Real, Z0::Real=0.0, B0::Real, ka::Real, c0::Real=0.0,
+    c_offsets::AbstractVector{<:Real}=Float64[], s_offsets::AbstractVector{<:Real}=Float64[])
+    T = promote_type(typeof(a), typeof(R0), typeof(Z0), typeof(B0), typeof(ka), typeof(c0),
+        eltype(c_offsets), eltype(s_offsets))
+    return VEQBoundary{T}(a, R0, Z0, B0, ka, c0, collect(T, c_offsets), collect(T, s_offsets))
 end
 
 """
@@ -293,11 +301,17 @@ PF-route source: `heat_profile` (pressure-gradient-like) and
 `top.sample_count` points. μ0 scaling of the pressure-like input happens at
 materialization, mirroring veqpy.
 """
-Base.@kwdef struct VEQSource
-    heat_profile::Vector{Float64}
-    current_profile::Vector{Float64}
-    Ip::Float64 = NaN
-    beta::Float64 = NaN
+struct VEQSource{T<:Real}
+    heat_profile::Vector{T}
+    current_profile::Vector{T}
+    Ip::T
+    beta::T
+end
+
+function VEQSource(; heat_profile::AbstractVector{<:Real}, current_profile::AbstractVector{<:Real},
+    Ip::Real=NaN, beta::Real=NaN)
+    T = promote_type(eltype(heat_profile), eltype(current_profile), typeof(Ip), typeof(beta))
+    return VEQSource{T}(collect(T, heat_profile), collect(T, current_profile), Ip, beta)
 end
 
 """Not-a-knot cubic spline coefficients on a uniform grid (veqpy-compatible)."""
@@ -306,15 +320,15 @@ function veq_spline_coefficients(samples::AbstractVector{<:Real})
     n >= 4 || error("VEQ source spline needs at least 4 samples")
     h = 1.0 / (n - 1)
     M = zeros(n, n)
-    rhs = zeros(n)
+    rhs = zeros(eltype(samples), n)
     M[1, 1] = 1.0; M[1, 2] = -2.0; M[1, 3] = 1.0
     M[n, n - 2] = 1.0; M[n, n - 1] = -2.0; M[n, n] = 1.0
     for r in 2:(n - 1)
         M[r, r - 1] = 1.0; M[r, r] = 4.0; M[r, r + 1] = 1.0
         rhs[r] = 6.0 * (samples[r + 1] - 2.0 * samples[r] + samples[r - 1]) / h^2
     end
-    sec = M \ rhs
-    coeff = zeros(n - 1, 4)
+    sec = M \ rhs   # constant matrix: dual right-hand sides solve generically
+    coeff = zeros(eltype(sec), n - 1, 4)
     for iv in 1:(n - 1)
         coeff[iv, 1] = samples[iv]
         coeff[iv, 2] = samples[iv + 1] - samples[iv] - h^2 * (2.0 * sec[iv] + sec[iv + 1]) / 6.0
@@ -325,7 +339,7 @@ function veq_spline_coefficients(samples::AbstractVector{<:Real})
 end
 
 """Evaluate uniform-interval cubic coefficients at query q ∈ [0,1] (clamped)."""
-function veq_spline_eval(coeff::AbstractMatrix{Float64}, q::Real)
+function veq_spline_eval(coeff::AbstractMatrix{<:Real}, q::Real)
     nint = size(coeff, 1)
     qc = clamp(q, zero(q), one(q))
     pos = qc * nint
@@ -385,14 +399,14 @@ end
 # Kernel: precomputed static data for one topology + case
 # ------------------------------------------------------------------
 
-struct VEQKernel
+struct VEQKernel{B<:VEQBoundary,S<:VEQSource,C<:AbstractMatrix{<:Real}}
     top::VEQTopology
     grid::VEQGrid
     blocks::Vector{VEQBlock}
-    boundary::VEQBoundary
-    source::VEQSource
-    heat_coeff::Matrix{Float64}   # spline of μ0-scaled heat samples
-    curr_coeff::Matrix{Float64}
+    boundary::B
+    source::S
+    heat_coeff::C   # spline of μ0-scaled heat samples
+    curr_coeff::C
     x_size::Int
     work::Dict{DataType,Any}      # VEQWork{T} cache; makes residual non-thread-safe
 end
@@ -540,7 +554,7 @@ end
 """Project θ-collapsed residual onto the block's Chebyshev test functions."""
 function veq_project!(out::AbstractVector, b::VEQBlock, T::Matrix{Float64},
     collapsed::AbstractVector, radial::AbstractVector, y::Vector{Float64},
-    w::Vector{Float64}, scalar::Float64)
+    w::Vector{Float64}, scalar::Real)
     @inbounds for (l, xi) in enumerate(b.xind)
         acc = zero(eltype(collapsed))
         for i in eachindex(collapsed)
@@ -564,14 +578,17 @@ is not thread-safe for concurrent calls on one kernel).
 Returns `(out, α1, α2)`.
 """
 function veq_residual!(out::AbstractVector, x::AbstractVector, kern::VEQKernel)
-    TT = promote_type(eltype(out), eltype(x))
+    TT = promote_type(eltype(out), eltype(x), veq_numtype(kern))
     wk = veq_getwork(kern, TT)
     α1, α2 = veq_residual_core!(out, x, kern, wk)
     return out, α1, α2
 end
 
+"""Number type of the kernel's inputs (boundary and sources): Float64, or duals for sensitivities."""
+veq_numtype(kern::VEQKernel) = promote_type(eltype(kern.heat_coeff), eltype(kern.curr_coeff), typeof(kern.boundary.a))
+
 function veq_residual(x::AbstractVector, kern::VEQKernel)
-    out = Vector{promote_type(Float64, eltype(x))}(undef, kern.x_size)
+    out = Vector{promote_type(Float64, eltype(x), veq_numtype(kern))}(undef, kern.x_size)
     veq_residual!(out, x, kern)
     return out
 end

@@ -1,12 +1,14 @@
 function QuadInfo(shot::Shot; order::Int=int_order)
     MXH_modes = length(shot.cfe)
-    Q = QuadInfo(shot.ρ, shot.M, MXH_modes; order)
+    Q = QuadInfo(shot.ρ, shot.M, MXH_modes; order, T=eltype(shot.R0fe.coeffs))
     MXH_quadrature!(Q, shot)
     metrics_quadrature!(Q)
     return Q
 end
 
-function QuadInfo(ρ::AbstractVector, M::Int, MXH_modes::Int; order::Int=int_order)
+# `T` is the number type of the geometry (shape profiles and metrics); the
+# quadrature nodes, weights and basis values stay plain floats.
+function QuadInfo(ρ::AbstractVector, M::Int, MXH_modes::Int; order::Int=int_order, T::Type{<:Real}=Float64)
     # ρ only
     xq, wq = get_quadrature(ρ, order)
     Nρ = length(xq)
@@ -16,21 +18,22 @@ function QuadInfo(ρ::AbstractVector, M::Int, MXH_modes::Int; order::Int=int_ord
     D_nue = [nu_quadrature(D_νe, xq, k, ρ, order) for k in eachindex(ρ)]
 
     Nq = length(xq)
-    R0 = similar(xq)
-    Z0 = similar(xq)
-    ϵ = similar(xq)
-    κ = similar(xq)
-    c0 = similar(xq)
-    c = zeros(MXH_modes, Nq)
-    s = zeros(MXH_modes, Nq)
+    T = promote_type(eltype(xq), T)
+    R0 = zeros(T, Nq)
+    Z0 = zeros(T, Nq)
+    ϵ = zeros(T, Nq)
+    κ = zeros(T, Nq)
+    c0 = zeros(T, Nq)
+    c = zeros(T, MXH_modes, Nq)
+    s = zeros(T, MXH_modes, Nq)
 
-    dR0 = similar(xq)
-    dZ0 = similar(xq)
-    dϵ = similar(xq)
-    dκ = similar(xq)
-    dc0 = similar(xq)
-    dc = zeros(MXH_modes, Nq)
-    ds = zeros(MXH_modes, Nq)
+    dR0 = zeros(T, Nq)
+    dZ0 = zeros(T, Nq)
+    dϵ = zeros(T, Nq)
+    dκ = zeros(T, Nq)
+    dc0 = zeros(T, Nq)
+    dc = zeros(T, MXH_modes, Nq)
+    ds = zeros(T, MXH_modes, Nq)
 
     # θ only
     θ = range(0, twopi, 2M + 5)[1:end-1]
@@ -45,7 +48,7 @@ function QuadInfo(ρ::AbstractVector, M::Int, MXH_modes::Int; order::Int=int_ord
     end
 
     # ρ and θ
-    gρρ = zeros(Nρ, Mθ)
+    gρρ = zeros(T, Nρ, Mθ)
     gρθ = similar(gρρ)
     gθθ = similar(gρρ)
 
@@ -53,7 +56,7 @@ function QuadInfo(ρ::AbstractVector, M::Int, MXH_modes::Int; order::Int=int_ord
 end
 
 function QuadInfo(ρ::AbstractVector, M::Int, MXH_modes::Int, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe; order::Int=int_order)
-    Q = QuadInfo(ρ, M, MXH_modes; order)
+    Q = QuadInfo(ρ, M, MXH_modes; order, T=eltype(R0fe.coeffs))
     MXH_quadrature!(Q, ρ, R0fe, Z0fe, ϵfe, κfe, c0fe, cfe, sfe)
     metrics_quadrature!(Q)
     return Q

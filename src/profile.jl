@@ -1,5 +1,19 @@
 (prof::Profile)(x) = prof.fe(x)
 
+# number type carried by a profile input (plain functions count as Float64)
+_profile_numtype(::Nothing) = Float64
+_profile_numtype(::Function) = Float64
+_profile_numtype(fe::FE_rep) = eltype(fe.coeffs)
+_profile_numtype(prof::Profile) = promote_type(_profile_numtype(prof.fe), _profile_numtype(prof.orig))
+_profile_numtype(Yg::Tuple) = _profile_numtype(first(Yg))
+
+# sqrt with an exact zero (value and partials) at 0: plain `sqrt` of a dual
+# zero gives 0·Inf = NaN partials (e.g. ρtor or ρ on axis)
+sqrt0(x::Real) = ForwardDiff.value(x) == 0 ? zero(x) : sqrt(x)
+
+# same grid, coefficients mapped through `f` (e.g. to strip or add dual partials)
+_retype_fe(fe::FE_rep, f) = FE_rep(fe.x, map(f, fe.coeffs))
+
 deriv(y::Function, x) = ForwardDiff.derivative(y, x)
 deriv(y::FE_rep, x) = D(y, x)
 deriv(y::Profile, x) = D(y.fe, x)

@@ -62,7 +62,7 @@ Returns `(ρs, ψtab)` with `ψtab` strictly increasing.
 function veq_rho_psin_table(x::AbstractVector, kern::VEQKernel; n::Int=4001)
     b = kern.blocks[findfirst(bb -> bb.name === :psin, kern.blocks)]
     ρs = range(0.0, 1.0, n)
-    ψtab = Vector{Float64}(undef, n)
+    ψtab = Vector{promote_type(Float64, eltype(x), veq_numtype(kern))}(undef, n)
     for (i, ρ) in enumerate(ρs)
         ψtab[i] = veq_profile_at(b, x, kern, ρ)
     end
@@ -79,7 +79,7 @@ function veq_rho_psin_table(x::AbstractVector, kern::VEQKernel; n::Int=4001)
 end
 
 """Invert the monotone table from `veq_rho_psin_table` at `ψn` (linear interpolation)."""
-function veq_rho_of_psin(ρs::AbstractRange, ψtab::Vector{Float64}, ψn::Real)
+function veq_rho_of_psin(ρs::AbstractRange, ψtab::AbstractVector{<:Real}, ψn::Real)
     ψn <= 0.0 && return 0.0
     ψn >= 1.0 && return 1.0
     j = searchsortedfirst(ψtab, ψn)
@@ -93,8 +93,8 @@ function VEQBoundary(shot::Shot)
     bnd = @view shot.surfaces[:, end]
     R0, Z0, ϵ, κ, c0 = bnd[1], bnd[2], bnd[3], bnd[4], bnd[5]
     L = length(shot.cfe)
-    c_offsets = collect(Float64, bnd[6:(5 + L)])
-    s_offsets = collect(Float64, bnd[(6 + L):(5 + 2L)])
+    c_offsets = collect(bnd[6:(5 + L)])
+    s_offsets = collect(bnd[(6 + L):(5 + 2L)])
     # MillerExtendedHarmonic and VEQ share the same parameterization:
     # R = R0 + a cos(θ + c0 + Σ c cos(mθ) + s sin(mθ)), Z = Z0 − κ a sin θ
     return VEQBoundary(; a=ϵ * R0, R0, Z0, B0=shot.Fbnd / R0, ka=κ, c0,
@@ -115,13 +115,8 @@ function veq_source_samples(shot::Shot, ψ_s::Real, sample_count::Int)
     Pp = Pprime(shot, shot.P, shot.dP_dψ)
     ffp = FFprime(shot, shot.F_dF_dψ, shot.Jt_R, shot.Jt; invR=shot.invR, invR2=shot.invR2)
     ψn_axis = range(0.0, 1.0, sample_count)
-    heat = Vector{Float64}(undef, sample_count)
-    curr = Vector{Float64}(undef, sample_count)
-    for (i, ψn) in enumerate(ψn_axis)
-        ρpol = sqrt(ψn)
-        heat[i] = Pp(ρpol) * ψ_s
-        curr[i] = ffp(ρpol) * ψ_s
-    end
+    heat = [Pp(sqrt(ψn)) * ψ_s for ψn in ψn_axis]
+    curr = [ffp(sqrt(ψn)) * ψ_s for ψn in ψn_axis]
     return heat, curr
 end
 
@@ -209,17 +204,17 @@ loop can proceed on the previous geometry.
 function veq_writeback!(shot::Shot, x::AbstractVector, kern::VEQKernel, ψ_s::Real)
     L = length(shot.cfe)
     ρtab, ψtab = veq_rho_psin_table(x, kern)
-    surfaces = similar(shot.surfaces)
+    surfaces = similar(shot.surfaces, promote_type(eltype(shot.surfaces), eltype(ψtab)))
     for kknot in eachindex(shot.ρ)
         ρv = veq_rho_of_psin(ρtab, ψtab, shot.ρ[kknot]^2)
         @views veq_flat_surface!(surfaces[:, kknot], x, kern, shot.ρ[kknot]^2, L; ρv)
     end
     veq_surfaces_nested(surfaces) || return false
     δρ = shot.ρ[end] - shot.ρ[end - 1]
-    flat_δ2 = zeros(2L + 5)
+    flat_δ2 = zeros(eltype(surfaces), 2L + 5)
     ψn_δ2 = (shot.ρ[end - 1] + δ_frac_2 * δρ)^2
     veq_flat_surface!(flat_δ2, x, kern, ψn_δ2, L; ρv=veq_rho_of_psin(ρtab, ψtab, ψn_δ2))
-    flat_δ3 = zeros(2L + 5)
+    flat_δ3 = zeros(eltype(surfaces), 2L + 5)
     ψn_δ3 = (shot.ρ[end - 1] + δ_frac_3 * δρ)^2
     veq_flat_surface!(flat_δ3, x, kern, ψn_δ3, L; ρv=veq_rho_of_psin(ρtab, ψtab, ψn_δ3))
 
@@ -249,8 +244,31 @@ Counts arrays may include trailing zeros: those harmonics stay passive
 (boundary value scaled by ρ^K_m) but still shape the geometry.
 
 Returns `shot`.
+
+# Derivatives
+
+If the profiles, `Pbnd`, `Fbnd` or `Ip_target` are ForwardDiff duals, the
+solve runs on their values and the partials are propagated by the implicit
+function theorem (`veq_solve_dual`). This returns a **new** dual-typed Shot,
+so always use the return value. `sens_its`/`sens_tol` bound the derivative
+passes (relative change of the partials). The boundary shape carries no
+partials; nested duals are not supported.
 """
-function veq_solve!(shot::Shot;
+function veq_solve!(shot::Shot; sens_its::Int=20, sens_tol::Real=1e-7, kwargs...)
+    # inputs carrying ForwardDiff duals: solve on values, then propagate the
+    # partials by the implicit function theorem (see veq_dual.jl)
+    veq_input_numtype(shot) <: ForwardDiff.Dual && return veq_solve_dual(shot; sens_its, sens_tol, kwargs...)
+    return veq_solve_values!(shot; kwargs...)[1]
+end
+
+"""
+    veq_solve_values!(shot::Shot; kwargs...)
+
+Float VEQ solve behind `veq_solve!`. Returns `(shot, x, kern, ψ_s, top)`: the
+converged packed state, the kernel of the last inner solve, the flux scale
+and the topology, which the dual path linearizes about.
+"""
+function veq_solve_values!(shot::Shot;
     h_count::Int=3, v_count::Int=0, kappa_count::Int=6, c0_count::Int=0, psin_count::Int=6,
     c_counts::AbstractVector{<:Integer}=zeros(Int, length(shot.cfe)),
     s_counts::AbstractVector{<:Integer}=[3; zeros(Int, length(shot.sfe) - 1)],
@@ -329,7 +347,7 @@ function veq_solve!(shot::Shot;
             error("veq_solve!: solve produced non-nested surfaces (inner |r| = $rn); " *
                   "try increasing the VEQ profile counts (psin_count, kappa_count, ...) for this profile shape")
     end
-    return shot
+    return shot, x, kern, ψ_s, top
 end
 
 export veq_solve!

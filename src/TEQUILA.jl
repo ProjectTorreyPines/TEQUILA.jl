@@ -42,7 +42,8 @@ mutable struct QuadInfo{
     MR1<:AbstractMatrix{<:Real},
     VR2<:AbstractVector{<:Real},
     MR2<:AbstractMatrix{<:Real},
-    MR3<:AbstractMatrix{<:Real}
+    MR3<:AbstractMatrix{<:Real},
+    VR3<:AbstractVector{<:Real}
 }
     x::VR1
     w::VR1
@@ -50,18 +51,18 @@ mutable struct QuadInfo{
     νe::VSV1
     D_νo::VSV1
     D_νe::VSV1
-    R0::VR1
-    Z0::VR1
-    ϵ::VR1
-    κ::VR1
-    c0::VR1
+    R0::VR3   # geometry at the quadrature nodes: number type of the shape (may be dual)
+    Z0::VR3
+    ϵ::VR3
+    κ::VR3
+    c0::VR3
     c::MR1
     s::MR1
-    dR0::VR1
-    dZ0::VR1
-    dϵ::VR1
-    dκ::VR1
-    dc0::VR1
+    dR0::VR3
+    dZ0::VR3
+    dϵ::VR3
+    dκ::VR3
+    dc0::VR3
     dc::MR1
     ds::MR1
     θ::VR2
@@ -190,6 +191,7 @@ export solve
 
 include("veq.jl")
 include("veq_shot.jl")
+include("veq_dual.jl")
 
 const document = Dict()
 document[Symbol(@__MODULE__)] = [:solve; [name for name in Base.names(@__MODULE__; all=false, imported=false) if (name != Symbol(@__MODULE__) && name != :solve)]]

@@ -104,3 +104,23 @@ end
     _, _, Ψax_w = find_axis(shot_v)
     @test isapprox(Ψax_w, Ψax_prev; rtol=1e-4)
 end
+
+include("veq_stall_case.jl")
+
+@testset "veq_solve! throws when the inner Newton stalls" begin
+    # warm-started shot on which the inner Newton stops at |r| ≈ 5.2e-2 (no descent direction)
+    shot, kw = veq_stall_case()
+    @test_throws "inner Newton did not converge" veq_solve!(shot; kw...)
+
+    # with the threshold lifted the stalled state is returned with a warning, as before
+    shot, kw = veq_stall_case()
+    stalled = @test_logs (:warn, r"did not reach tol") match_mode = :any veq_solve!(shot; kw..., stall_factor=Inf)
+
+    # the same boundary and profiles from a fresh shot converge, to a different equilibrium
+    s0, _ = veq_stall_case()
+    fresh = Shot(s0.N, s0.M, TEQUILA.MXH(s0.surfaces[:, end]); P=s0.P, Jt=s0.Jt, s0.Pbnd, s0.Fbnd, s0.Ip_target)
+    fresh = veq_solve!(fresh; kw...)
+    _, _, Ψax_stalled = find_axis(stalled)
+    _, _, Ψax_fresh = find_axis(fresh)
+    @test abs(Ψax_stalled - Ψax_fresh) > 0.2 * abs(Ψax_fresh)
+end

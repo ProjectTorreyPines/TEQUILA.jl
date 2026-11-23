@@ -124,3 +124,14 @@ include("veq_stall_case.jl")
     _, _, Ψax_fresh = find_axis(fresh)
     @test abs(Ψax_stalled - Ψax_fresh) > 0.2 * abs(Ψax_fresh)
 end
+
+@testset "scale_Ip! refuses a current profile that carries no current" begin
+    shot, _ = veq_stall_case()
+    TEQUILA.scale_Ip!(shot)
+    @test TEQUILA.Ip(shot) ≈ shot.Ip_target rtol = 1e-10
+    Jt = deepcopy(shot.Jt)
+    Jt.fe.coeffs .= 0.0
+    shot.Jt = Jt
+    @test TEQUILA.Ip(shot) == 0.0
+    @test_throws "a profile with no current cannot be scaled" TEQUILA.scale_Ip!(shot)
+end

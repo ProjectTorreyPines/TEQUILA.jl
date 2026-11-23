@@ -151,24 +151,34 @@ function scale_Ip!(shot::Shot, I_c=Ip(shot))
 
     if shot.Jt_R !== nothing
         Jt_R = deepcopy(shot.Jt_R)
-        Jt_R.fe.coeffs .*= shot.Ip_target / I_c
+        Jt_R.fe.coeffs .*= _Ip_scale_factor(shot.Ip_target, I_c, "Jt_R")
         shot.Jt_R = Jt_R
 
     elseif shot.Jt !== nothing
         Jt = deepcopy(shot.Jt)
-        Jt.fe.coeffs .*= shot.Ip_target / I_c
+        Jt.fe.coeffs .*= _Ip_scale_factor(shot.Ip_target, I_c, "Jt")
         shot.Jt = Jt
 
     else
         ΔI = shot.Ip_target - I_c
         If_c = Ip_ffp(shot)
-        fac = 1 + ΔI / If_c
+        fac = 1 + _Ip_scale_factor(ΔI, If_c, "F_dF_dψ")
         F_dF_dψ = deepcopy(shot.F_dF_dψ)
         F_dF_dψ.fe.coeffs .*= fac
         shot.F_dF_dψ = F_dF_dψ
     end
 
     return
+end
+
+# Ip_target / I_c, refusing a profile that carries no current: a zero (or non-finite) current would scale every
+# coefficient by Inf (0 * Inf = NaN) and the failure would only surface later, as a NaN integrand in the FSAs
+function _Ip_scale_factor(Ip_target, I_c, name)
+    fac = Ip_target / I_c
+    isfinite(fac) ||
+        error("scale_Ip!: cannot scale the $name profile to Ip_target = $Ip_target: its current is $I_c " *
+              "(a profile with no current cannot be scaled)")
+    return fac
 end
 
 function validate_current(shot; I_c=Ip(shot))

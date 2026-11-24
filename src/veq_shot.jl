@@ -227,7 +227,7 @@ end
         h_count=3, kappa_count=6, psin_count=6, c_counts=zeros(Int, length(shot.cfe)),
         s_counts=[3; zeros(Int, length(shot.sfe) - 1)],
         Nr=16, Nt=16, sample_count=51,
-        outer_its=20, outer_tol=1e-8, tol=1e-9, debug=false)
+        outer_its=20, outer_tol=1e-8, tol=1e-9, stall_factor=1e3, debug=false)
 
 Run the VEQ direct solve for `shot`'s boundary and pressure/current profiles
 and write the result back into `shot`. All Shot profile routes are supported
@@ -242,6 +242,12 @@ the current geometry.
 
 Counts arrays may include trailing zeros: those harmonics stay passive
 (boundary value scaled by ρ^K_m) but still shape the geometry.
+
+The outer loop only checks that ψ_s is stationary, which a stalled inner
+solve also satisfies. If the last inner Newton solve ends with a residual
+norm above `stall_factor * tol` (e.g. at a local minimum of |r|, which is
+not an equilibrium) the solve throws; between `tol` and `stall_factor * tol`
+it warns and returns. `stall_factor=Inf` only warns.
 
 Returns `shot`.
 
@@ -273,7 +279,7 @@ function veq_solve_values!(shot::Shot;
     c_counts::AbstractVector{<:Integer}=zeros(Int, length(shot.cfe)),
     s_counts::AbstractVector{<:Integer}=[3; zeros(Int, length(shot.sfe) - 1)],
     Nr::Int=16, Nt::Int=16, sample_count::Int=51,
-    outer_its::Int=20, outer_tol::Real=1e-8, tol::Real=1e-9,
+    outer_its::Int=20, outer_tol::Real=1e-8, tol::Real=1e-9, stall_factor::Real=1e3,
     ψ_s0::Real=0.0, debug::Bool=false)
 
     top = VEQTopology(; h_count, v_count, kappa_count, c0_count, psin_count,
@@ -337,7 +343,15 @@ function veq_solve_values!(shot::Shot;
         kern = veq_with_source(kern, VEQSource(; heat_profile=heat, current_profile=curr))
     end
 
-    ok || @warn "veq_solve!: inner Newton did not reach tol" rn it
+    if !ok
+        # ψ_s stationarity alone does not mean convergence: an inner Newton
+        # that stalls (no descent direction) leaves x fixed, so ψ_s is
+        # trivially stationary while x is not a root of the residual
+        rn <= stall_factor * tol ||
+            error("veq_solve!: inner Newton did not converge (|r| = $rn after $it iterations, " *
+                  "above stall_factor * tol = $(stall_factor * tol)): the solution is not an equilibrium")
+        @warn "veq_solve!: inner Newton did not reach tol" rn it
+    end
 
     if needs_geometry
         wb_ok || error("veq_solve!: solve ended with non-nested surfaces (inner |r| = $rn); " *
